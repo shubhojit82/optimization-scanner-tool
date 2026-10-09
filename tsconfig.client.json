@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "lib": [
+      "DOM",
+      "DOM.Iterable",
+      "ES2022"
+    ],
+    "types": [
+      "node",
+      "vite/client"
+    ]
+  },
+  "include": [
+    "frontend/**/*.tsx",
+    "app/workbench-ui.tsx",
+    "src/core/**/*.ts",
+    "vite.portable.config.ts"
+  ]
+}

@@ -1,0 +1,23 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import ts from 'typescript';
+import {readFileSync,mkdirSync,writeFileSync} from 'node:fs';
+import {pathToFileURL} from 'node:url';
+mkdirSync('.sites-runtime/tests/core',{recursive:true});mkdirSync('.sites-runtime/tests/application',{recursive:true});
+for(const p of ['core/contracts','core/brand-matching','core/scoring','core/demo','application/workbench']){const source=readFileSync(`src/${p}.ts`,'utf8');let out=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;out=out.replace(/from '(\.\.?\/[^']+)'/g,"from '$1.mjs'");writeFileSync(`.sites-runtime/tests/${p}.mjs`,out)}
+const {analyzeHtml,aggregate,visibility,queryUniverse}=await import(pathToFileURL(process.cwd()+'/.sites-runtime/tests/core/scoring.mjs'));
+const {sampleClient:c,sampleHtml}=await import(pathToFileURL(process.cwd()+'/.sites-runtime/tests/core/demo.mjs'));
+const {Workbench}=await import(pathToFileURL(process.cwd()+'/.sites-runtime/tests/application/workbench.mjs'));
+test('rubric weights total 100, unknowns remain null, coverage is 70',()=>{const d=analyzeHtml(sampleHtml,c);assert.equal(d.reduce((s,x)=>s+x.weight,0),100);assert.equal(aggregate(d).coverage,70);assert.equal(d.find(x=>x.id==='crawl').score,null)});
+test('unknown dimensions neither inflate nor lower assessed score',()=>{assert.deepEqual(aggregate([{weight:40,score:100},{weight:60,score:null}]),{score:100,coverage:40});assert.deepEqual(aggregate([{weight:100,score:null}]),{score:0,coverage:0})});
+test('noindex in either attribute order is detected',()=>{const h=sampleHtml.replace('</head>',"<meta content='noindex, follow' name='robots'></head>");assert.equal(analyzeHtml(h,c).find(x=>x.id==='technical').score,0)});
+test('hidden script and comment brand names do not count as visible entities',()=>{const d=analyzeHtml('<html><!--Northstar--><script>Northstar</script><style>Northstar</style><h1>Another brand</h1></html>',c);assert.equal(d.find(x=>x.id==='entity').score,0)});
+test('invalid JSON-LD is not accepted as valid schema',()=>{const d=analyzeHtml(sampleHtml+'<script type="application/ld+json">{broken}</script>',c);assert.equal(d.find(x=>x.id==='schema').score,0);assert.match(d.find(x=>x.id==='schema').evidence,/1 invalid/)});
+test('JSON-LD graph with typed node is recognized',()=>{const d=analyzeHtml(sampleHtml+'<script type="application/ld+json">{"@graph":[{"@type":"Organization"}]}</script>',c);assert.equal(d.find(x=>x.id==='schema').score,100)});
+test('empty observations stay unmeasured',()=>assert.deepEqual(visibility(c,[]),{sample:0,mentionRate:null,citationRate:null}));
+test('citation host spoofing and brand substrings are not matches',()=>{assert.deepEqual(visibility(c,[{response:'Northstarlight',citations:['https://northstar.example.evil.test']},{response:'Choose Northstar.',citations:['https://docs.northstar.example/page']}]),{sample:2,mentionRate:50,citationRate:50})});
+test('special characters in brand names are escaped',()=>{assert.equal(visibility({...c,name:'A+B'},[{response:'A+B is a vendor',citations:[]}]).mentionRate,100)});
+test('generated prompt set reflects products, competitors and market',()=>{const qs=queryUniverse(c);assert.equal(qs.length,10);assert.ok(qs.some(q=>q.prompt.includes('United States')));assert.ok(qs.some(q=>q.prompt.includes('Atlas')))});
+const saves=[];const repo={getClient:async(owner,id)=>owner==='owner'&&id===c.id?c:null,listRecords:async()=>[],saveRecords:async(...args)=>saves.push(args)};const service=new Workbench(repo);
+test('cross-owner reads and writes are denied before record access',async()=>{await assert.rejects(service.detail('other',c.id),/Client not found/);await assert.rejects(service.audit('other',c.id,c.domain,sampleHtml),/Client not found/);await assert.rejects(service.observations('other',c.id,[]),/Client not found/)});
+test('page evidence must belong to client, including subdomain boundary',async()=>{await assert.rejects(service.audit('owner',c.id,'https://northstar.example.attacker.test',sampleHtml),/Page URL/);const a=await service.audit('owner',c.id,'https://docs.northstar.example',sampleHtml);assert.equal(a.hash.length,64);assert.equal(a.coverage,70);assert.equal(a.source,'html-import');assert.equal('html' in a,false);assert.equal(saves.length,1)});

@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "outDir": "dist/server",
+    "rootDir": "src",
+    "types": [
+      "node"
+    ],
+    "lib": [
+      "ES2022",
+      "DOM"
+    ]
+  },
+  "include": [
+    "src/core/**/*.ts",
+    "src/application/**/*.ts",
+    "src/adapters/validation.ts",
+    "src/server/**/*.ts"
+  ]
+}

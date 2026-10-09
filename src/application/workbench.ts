@@ -1,0 +1,11 @@
+import type { Audit, Observation, Repository } from '../core/contracts';
+import { aggregate, analyzeHtml, subScores, queryUniverse, RUBRIC_VERSION, visibility } from '../core/scoring';
+export class Workbench {
+    constructor(private repo: Repository) { }
+    async client(owner: string, id: string) { const c = await this.repo.getClient(owner, id); if (!c)
+        throw new Error('Client not found'); return c; }
+    async detail(owner: string, id: string) { const c = await this.client(owner, id); const [audits, observations] = await Promise.all([this.repo.listRecords<Audit>(owner, id, 'audit'), this.repo.listRecords<Observation>(owner, id, 'observation')]); return { client: c, audits, observations, queries: queryUniverse(c), visibility: visibility(c, observations) }; }
+    async audit(owner: string, id: string, url: string, html: string) { const c = await this.client(owner, id); const host = new URL(c.domain).hostname.replace(/^www\./, ''); const h = new URL(url).hostname.replace(/^www\./, ''); if (h !== host && !h.endsWith('.' + host))
+        throw new Error('Page URL must belong to the client domain'); const dimensions = analyzeHtml(html, c); const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(html)); const hash = Array.from(new Uint8Array(bytes), x => x.toString(16).padStart(2, '0')).join(''); const existing = await this.repo.listRecords<Audit>(owner, id, 'audit'); const dupe = existing.find(a => a.hash === hash && a.url === url); if (dupe) return dupe; const audit: Audit = { id: crypto.randomUUID(), clientId: id, url, created: new Date().toISOString(), version: RUBRIC_VERSION, source: 'html-import', hash, dimensions, ...aggregate(dimensions), subScores: subScores(dimensions) }; await this.repo.saveRecords(owner, id, 'audit', [audit]); return audit; }
+    async observations(owner: string, id: string, rows: Omit<Observation, 'id' | 'clientId' | 'created' | 'source'>[]) { await this.client(owner, id); const created = new Date().toISOString(); const records = rows.map(r => ({ ...r, id: crypto.randomUUID(), clientId: id, created, source: 'manual-import' as const })); await this.repo.saveRecords(owner, id, 'observation', records); return { imported: records.length }; }
+}

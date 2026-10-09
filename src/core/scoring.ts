@@ -1,0 +1,782 @@
+import type { Client, Dimension, DimensionDetail, DimensionItem, Observation } from './contracts';
+import {mentionsBrand} from './brand-matching';
+export const RUBRIC_VERSION = 'readiness-cues/1.1.0';
+export function aggregate(dimensions: Dimension[]) { const known = dimensions.filter(d => d.score !== null); const coverage = known.reduce((n, d) => n + d.weight, 0); return { score: coverage ? Math.round(known.reduce((n, d) => n + d.weight * d.score!, 0) / coverage) : 0, coverage }; }
+// SEO = crawl + technical + schema + freshness (technical crawlability signals)
+// AEO = content + entity + evidence + query (answer engine signals from on-page content)
+// GEO = measurement + authority (AI visibility signals — typically unassessed from HTML alone)
+const SEO_IDS = ['crawl','technical','schema','freshness'];
+const AEO_IDS = ['content','entity','evidence','query','reasoning-cues','passage-density','entity-links'];
+const GEO_IDS = ['measurement','authority'];
+export function subScores(dimensions: Dimension[]): {seoScore:number|null;aeoScore:number|null;geoScore:number|null} {
+    function sub(ids: string[]) {
+        const group = dimensions.filter(d => ids.includes(d.id) && d.score !== null);
+        if (!group.length) return null;
+        const w = group.reduce((n,d) => n+d.weight, 0);
+        return w ? Math.round(group.reduce((n,d) => n+d.weight*d.score!, 0)/w) : null;
+    }
+    return {seoScore: sub(SEO_IDS), aeoScore: sub(AEO_IDS), geoScore: sub(GEO_IDS)};
+}
+function extractText(html: string): string {
+    return html.replace(/<(script|style|nav|footer|header)\b[^>]*>[\s\S]*?<\/\1>/gi, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+function innerText(html: string, tag: string): string {
+    const m = html.match(new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)<\\/${tag}>`, 'i'));
+    if (!m) return '';
+    return m[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
+}
+function allInnerTexts(html: string, tag: string): string[] {
+    const results: string[] = [];
+    for (const m of html.matchAll(new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)<\\/${tag}>`, 'gi'))) {
+        const t = m[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
+        if (t) results.push(t);
+    }
+    return results;
+}
+export function analyzeHtml(html: string, c: Client): Dimension[] {
+    const clean = html.replace(/<!--[\s\S]*?-->/g, '');
+    const visible = extractText(clean);
+    const tags = Array.from(clean.matchAll(/<(meta|link)\b([^>]*)>/gi), m => ({ tag: m[1].toLowerCase(), attrs: Object.fromEntries(Array.from(m[2].matchAll(/([\w-]+)\s*=\s*["']([^"']*)["']/g), a => [a[1].toLowerCase(), a[2]])) }));
+
+    // Extract actual content for rich evidence
+    const titleText = innerText(clean, 'title');
+    const h1Text = innerText(clean, 'h1');
+    const h2Texts = allInnerTexts(clean, 'h2');
+    const h3Texts = allInnerTexts(clean, 'h3');
+    const descTag = tags.find(t => t.attrs.name?.toLowerCase() === 'description' && t.attrs.content?.trim());
+    const canonicalTag = tags.find(t => t.tag === 'link' && t.attrs.rel?.toLowerCase().split(/\s+/).includes('canonical') && t.attrs.href);
+    const noindexTag = tags.find(t => t.attrs.name?.toLowerCase() === 'robots' && /\bnoindex\b/i.test(t.attrs.content || ''));
+    const title = !!titleText, h1 = !!h1Text;
+    const desc = !!descTag, canonical = !!canonicalTag, noindex = !!noindexTag;
+
+    // H2 texts with anchor IDs
+    const h2Elements: {text: string; id: string}[] = [];
+    for (const m of clean.matchAll(/<h2\b([^>]*?)>([\s\S]*?)<\/h2>/gi)) {
+        const attrs = m[1];
+        const text = m[2].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
+        const idMatch = attrs.match(/\bid\s*=\s*["']([^"']+)["']/i);
+        h2Elements.push({text, id: idMatch ? idMatch[1] : ''});
+    }
+
+    // H3 texts with anchor IDs
+    const h3Elements: {text: string; id: string}[] = [];
+    for (const m of clean.matchAll(/<h3\b([^>]*?)>([\s\S]*?)<\/h3>/gi)) {
+        const attrs = m[1];
+        const text = m[2].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
+        const idMatch = attrs.match(/\bid\s*=\s*["']([^"']+)["']/i);
+        h3Elements.push({text, id: idMatch ? idMatch[1] : ''});
+    }
+
+    // Extract images and inputs
+    const extractedImages: {src: string; alt: string; hasAlt: boolean}[] = [];
+    for (const m of clean.matchAll(/<img\b([^>]*?)>/gi)) {
+        const attrs = m[1];
+        const srcMatch = attrs.match(/\bsrc\s*=\s*["']([^"']+)["']/i);
+        const altMatch = attrs.match(/\balt\s*=\s*["']([^"']*)["']/i);
+        extractedImages.push({
+            src: srcMatch ? srcMatch[1] : '',
+            alt: altMatch ? altMatch[1] : '',
+            hasAlt: !!altMatch
+        });
+    }
+
+    const extractedInputs: {id: string; type: string}[] = [];
+    for (const m of clean.matchAll(/<input\b([^>]*?)>/gi)) {
+        const attrs = m[1];
+        const idMatch = attrs.match(/\bid\s*=\s*["']([^"']+)["']/i);
+        const typeMatch = attrs.match(/\btype\s*=\s*["']([^"']+)["']/i);
+        extractedInputs.push({
+            id: idMatch ? idMatch[1] : '',
+            type: typeMatch ? typeMatch[1] : 'text'
+        });
+    }
+
+    // Schema: extract types with completeness scoring
+    const SCHEMA_REQUIRED: Record<string, string[]> = {
+        'Article': ['headline','author','datePublished','publisher'],
+        'NewsArticle': ['headline','author','datePublished','publisher'],
+        'BlogPosting': ['headline','author','datePublished'],
+        'Product': ['name','description','offers'],
+        'FAQPage': ['mainEntity'],
+        'HowTo': ['name','step'],
+        'Organization': ['name','url'],
+        'LocalBusiness': ['name','address','telephone'],
+        'Person': ['name'],
+        'WebPage': ['name','url'],
+        'WebSite': ['name','url'],
+        'BreadcrumbList': ['itemListElement'],
+        'Event': ['name','startDate','location'],
+        'JobPosting': ['title','description','hiringOrganization','datePosted'],
+        'Review': ['reviewRating','author','itemReviewed'],
+        'Service': ['name','provider'],
+    };
+    const SCHEMA_RECOMMENDED: Record<string, string[]> = {
+        'Article': ['image','description','keywords','sameAs'],
+        'NewsArticle': ['image','description','keywords'],
+        'BlogPosting': ['image','description','keywords','sameAs'],
+        'Product': ['image','sku','brand','aggregateRating','sameAs'],
+        'FAQPage': [],
+        'HowTo': ['description','image','totalTime'],
+        'Organization': ['logo','description','sameAs','contactPoint'],
+        'LocalBusiness': ['openingHours','image','geo','sameAs'],
+        'Person': ['jobTitle','affiliation','sameAs','url'],
+        'WebPage': ['description','breadcrumb'],
+        'WebSite': ['description','sameAs'],
+        'BreadcrumbList': [],
+        'Event': ['endDate','description','image','offers'],
+        'JobPosting': ['jobLocation','employmentType','baseSalary'],
+        'Review': ['reviewBody'],
+        'Service': ['description','areaServed','serviceType'],
+    };
+    const schemaTypes: string[] = [];
+    const allSameAs: string[] = [];
+    let invalid = 0;
+    const jsonLdBlocks: {index: number; type: string; valid: boolean; completeness?: number; missing?: string[]}[] = [];
+    let blockIndex = 1;
+    const blockCompleteness: number[] = [];
+    for (const m of clean.matchAll(/<script\b[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
+        try {
+            const j = JSON.parse(m[1]);
+            const nodes = Array.isArray(j) ? j : [j, ...(Array.isArray(j?.['@graph']) ? j['@graph'] : [])];
+            const typed = nodes.filter(n => n && typeof n === 'object' && n['@type']);
+            const types: string[] = [];
+            if (typed.length) {
+                // Collect sameAs from all typed nodes
+                for (const n of typed) {
+                    const sa = n['sameAs'];
+                    if (typeof sa === 'string') allSameAs.push(sa);
+                    else if (Array.isArray(sa)) sa.forEach(s => typeof s === 'string' && allSameAs.push(s));
+                }
+                // Compute completeness across all typed nodes in this block
+                let blockScoreSum = 0;
+                const blockMissing: string[] = [];
+                for (const n of typed) {
+                    const t = String(n['@type']);
+                    types.push(t);
+                    schemaTypes.push(t);
+                    const req = SCHEMA_REQUIRED[t] ?? [];
+                    const rec = SCHEMA_RECOMMENDED[t] ?? [];
+                    const maxScore = req.length * 2 + rec.length;
+                    if (maxScore === 0) { blockScoreSum += 100; continue; }
+                    let got = 0;
+                    for (const p of req) { if (n[p] !== undefined) got += 2; else blockMissing.push(`${t}.${p} (required)`); }
+                    for (const p of rec) { if (n[p] !== undefined) got += 1; else blockMissing.push(`${t}.${p} (recommended)`); }
+                    blockScoreSum += Math.round(got / maxScore * 100);
+                }
+                const avgCompleteness = Math.round(blockScoreSum / typed.length);
+                blockCompleteness.push(avgCompleteness);
+                jsonLdBlocks.push({index: blockIndex++, type: types.join(', '), valid: true, completeness: avgCompleteness, missing: blockMissing.slice(0, 6)});
+            } else {
+                invalid++;
+                jsonLdBlocks.push({index: blockIndex++, type: '(untyped block)', valid: false});
+            }
+        } catch {
+            invalid++;
+            jsonLdBlocks.push({index: blockIndex++, type: '(invalid JSON syntax)', valid: false});
+        }
+    }
+    const valid = schemaTypes.length > 0 ? 1 : 0;
+    const schemaCompletenessAvg = blockCompleteness.length ? Math.round(blockCompleteness.reduce((a,b) => a+b, 0) / blockCompleteness.length) : 0;
+    // Entity links from sameAs
+    const hasWikidata = allSameAs.some(u => /wikidata\.org/i.test(u));
+    const hasWikipedia = allSameAs.some(u => /wikipedia\.org/i.test(u));
+    const hasLinkedIn = allSameAs.some(u => /linkedin\.com/i.test(u));
+
+    // External links: collect actual URLs and domains and texts
+    const allLinks: {href: string; text: string; isExternal: boolean; domain: string}[] = [];
+    for (const m of clean.matchAll(/<a\b([^>]*?)>([\s\S]*?)<\/a>/gi)) {
+        const attrs = m[1];
+        const anchorText = m[2].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
+        const hrefMatch = attrs.match(/\bhref\s*=\s*["']([^"']+)["']/i);
+        if (hrefMatch) {
+            const href = hrefMatch[1];
+            let isExternal = false;
+            let domain = '';
+            try {
+                const urlObj = new URL(href);
+                domain = urlObj.hostname;
+                isExternal = domain !== new URL(c.domain).hostname;
+            } catch {
+                // local/relative
+            }
+            allLinks.push({href, text: anchorText || '(no text)', isExternal, domain});
+        }
+    }
+    const extLinks = allLinks.filter(l => l.isExternal);
+    const externalLinks = extLinks.map(l => l.href);
+
+    const words = visible.split(/\s+/).filter(Boolean).length;
+    const hasList = /<(ul|ol)\b/i.test(clean);
+    const hasTable = /<table\b/i.test(clean);
+    const brandFound = mentionsBrand(c, visible);
+
+    // Query readiness detection
+    const questionPatterns: string[] = [];
+    for (const text of [...h2Texts, ...h3Texts]) {
+        const trimmed = text.trim();
+        if (trimmed.endsWith('?') || /^(how|what|why|when|which)\b/i.test(trimmed)) {
+            questionPatterns.push(trimmed);
+        }
+    }
+    const hasOl = /<ol\b/i.test(clean);
+    const hasDl = /<dl\b/i.test(clean);
+
+    // Helper
+    const item = (label: string, value: string, status: DimensionItem['status']): DimensionItem => ({label, value, status});
+    const dd = (id: string, name: string, weight: number, score: number | null, evidence: string, action: string, details: DimensionDetail): Dimension =>
+        ({id, name, weight, score, evidence, action, details});
+
+    return [
+        dd('crawl', 'Crawler access', 15, null,
+            'Imported HTML cannot establish robots rules, WAF access, or indexing.',
+            'Use the Scanner tab to fetch the live URL. It checks robots.txt, WAF, and HTTP status automatically.',
+            {
+                found: [],
+                missing: ['Live crawl required — use Scanner tab to assess robots.txt, WAF and HTTP response'],
+                items: [
+                    item('Assessment method', 'HTML import — crawler signals not available', 'info'),
+                    item('How to check', 'Scanner tab → enter URL → Run scan', 'info'),
+                ],
+                table: {
+                    headers: ["Check", "Result"],
+                    rows: [
+                        ["Assessment method", "HTML import — crawler signals not available"],
+                        ["How to check", "Scanner tab → enter URL → Run scan"]
+                    ]
+                }
+            }),
+
+        dd('technical', 'Page structure', 10, noindex ? 0 : 25 * [title, h1, desc, canonical].filter(Boolean).length,
+            `Title ${title ? 'present' : 'missing'}; H1 ${h1 ? 'present' : 'missing'}; description ${desc ? 'present' : 'missing'}; canonical ${canonical ? 'present' : 'missing'}; noindex ${noindex ? 'detected' : 'not detected'}.`,
+            'Review title, H1, description, canonical and intended indexing policy.',
+            {
+                found: [...(title ? [`<title> found: "${titleText}"`] : []), ...(h1 ? [`<h1> found: "${h1Text}"`] : []), ...(desc ? [`<meta name="description"> found: "${descTag!.attrs.content!.slice(0,120)}"`] : []), ...(canonical ? [`<link rel="canonical"> found: "${canonicalTag!.attrs.href}"`] : [])],
+                missing: [...(!title ? ['<title> tag — add a descriptive page title (50–60 chars). In HTML: <title>Your page title here</title> in <head>'] : []), ...(!h1 ? ['<h1> tag — add one main heading that describes the page. In HTML: <h1>Your main heading</h1>'] : []), ...(!desc ? ['<meta name="description"> — add a summary for search snippets (120–155 chars). In HTML: <meta name="description" content="Your description here">'] : []), ...(!canonical ? ['<link rel="canonical"> — declare the canonical URL. In HTML: <link rel="canonical" href="https://your-site.com/this-page/">'] : []), ...(noindex ? ['noindex directive detected — <meta name="robots"> is blocking indexing. Remove noindex if the page should be indexed.'] : [])],
+                items: [
+                    item('<title>', title ? `"${titleText}" (${titleText.length} chars)` : 'MISSING', title ? (titleText.length >= 30 && titleText.length <= 70 ? 'ok' : 'warn') : 'fail'),
+                    item('<h1>', h1 ? `"${h1Text}"` : 'MISSING', h1 ? 'ok' : 'fail'),
+                    item('<meta description>', desc ? `"${descTag!.attrs.content!.slice(0, 120)}" (${descTag!.attrs.content!.length} chars)` : 'MISSING', desc ? (descTag!.attrs.content!.length >= 100 && descTag!.attrs.content!.length <= 160 ? 'ok' : 'warn') : 'fail'),
+                    item('<link canonical>', canonical ? canonicalTag!.attrs.href : 'MISSING', canonical ? 'ok' : 'fail'),
+                    item('noindex', noindex ? `DETECTED — "${noindexTag!.attrs.content}"` : 'Not set', noindex ? 'fail' : 'ok'),
+                ],
+                table: {
+                    headers: ["Attribute", "Value", "Status", "Chars"],
+                    rows: [
+                        ["<title>", title ? titleText : "MISSING", title ? (titleText.length >= 30 && titleText.length <= 70 ? "Pass" : "Warning") : "Fail", title ? String(titleText.length) : "0"],
+                        ["<h1>", h1 ? h1Text : "MISSING", h1 ? "Pass" : "Fail", h1 ? String(h1Text.length) : "0"],
+                        ["<meta description>", desc ? descTag!.attrs.content! : "MISSING", desc ? (descTag!.attrs.content!.length >= 100 && descTag!.attrs.content!.length <= 160 ? "Pass" : "Warning") : "Fail", desc ? String(descTag!.attrs.content!.length) : "0"],
+                        ["<link canonical>", canonical ? canonicalTag!.attrs.href! : "MISSING", canonical ? "Pass" : "Fail", "—"],
+                        ["noindex", noindex ? `DETECTED — "${noindexTag!.attrs.content}"` : "Not set", noindex ? "Fail" : "Pass", "—"]
+                    ]
+                }
+            }),
+
+        dd('entity', 'Brand clarity', 15, brandFound ? 100 : 0,
+            `Brand name or alias ${brandFound ? 'found' : 'not found'} in visible text.`,
+            'Name the brand explicitly in the opening paragraph. List what the brand does and who it serves.',
+            {
+                found: brandFound ? [`Brand name "${c.name}" or alias found in visible text`] : [],
+                missing: brandFound ? [] : [`Brand name "${c.name}" not found in page text — mention the brand clearly in the opening paragraph`],
+                items: [
+                    item('Brand name', c.name || '(not configured)', c.name ? 'info' : 'warn'),
+                    item('Brand aliases', c.brandAliases?.length ? c.brandAliases.join(', ') : 'None configured', 'info'),
+                    item('Brand found in text', brandFound ? 'Yes' : 'No — not detected', brandFound ? 'ok' : 'fail'),
+                    item('Visible word count', `${words} words`, words >= 150 ? 'ok' : 'warn'),
+                ],
+                table: {
+                    headers: ["Check", "Result"],
+                    rows: [
+                        ["Brand name", c.name || "(not configured)"],
+                        ["Brand aliases", c.brandAliases?.length ? c.brandAliases.join(', ') : "None configured"],
+                        ["Brand found in text", brandFound ? "Yes" : "No — not detected"],
+                        ["Visible word count", `${words} words`]
+                    ]
+                }
+            }),
+
+        dd('content', 'Answer structure', 10, 25 * [h1, h2Texts.length > 0, words >= 150, hasList || hasTable].filter(Boolean).length,
+            `${words} words; ${h2Texts.length} H2 heading(s); ${h3Texts.length} H3 heading(s); lists: ${hasList ? 'yes' : 'no'}; tables: ${hasTable ? 'yes' : 'no'}.`,
+            'Use descriptive headings and clear, factual answers; add lists or tables where useful.',
+            {
+                found: [...(h1 ? [`<h1>: "${h1Text}"`] : []), ...h2Texts.map(t => `<h2>: "${t}"`), ...h3Texts.map(t => `<h3>: "${t}"`), ...(hasList ? ['Lists (<ul>/<ol>) found'] : []), ...(hasTable ? ['Table (<table>) found'] : []), ...(words >= 150 ? [`Word count: ${words} words`] : [])],
+                missing: [...(!h1 ? ['<h1> tag missing — add a main heading'] : []), ...(h2Texts.length === 0 ? ['No <h2> headings — add sub-headings for each key topic or question'] : []), ...(words < 150 ? [`Only ${words} words — aim for at least 300 words of substantive content`] : []), ...(!hasList && !hasTable ? ['No lists or tables — add <ul>/<ol> for steps/features or <table> for comparisons'] : [])],
+                items: [
+                    item('<h1>', h1 ? `"${h1Text}"` : 'MISSING', h1 ? 'ok' : 'fail'),
+                    item('<h2> headings', h2Texts.length > 0 ? `${h2Texts.length} found` : 'NONE FOUND', h2Texts.length > 0 ? 'ok' : 'fail'),
+                    item('<h3> headings', h3Texts.length > 0 ? `${h3Texts.length} found` : 'None', h3Texts.length > 0 ? 'ok' : 'info'),
+                    item('Word count', `${words} words`, words >= 300 ? 'ok' : words >= 150 ? 'warn' : 'fail'),
+                    item('Lists / tables', hasList || hasTable ? `${hasList?'<ul>/<ol> ':''}${hasTable?'<table>':''}found` : 'NONE FOUND', hasList || hasTable ? 'ok' : 'warn'),
+                ],
+                table: {
+                    headers: ["Element", "Text", "Status"],
+                    rows: [
+                        ["<h1>", h1 ? h1Text : "MISSING", h1 ? "Pass" : "Fail"],
+                        ...h2Elements.map(h => [h.id ? `<h2> (id: ${h.id})` : "<h2>", h.text, "Pass"]),
+                        ...h3Elements.map(h => [h.id ? `<h3> (id: ${h.id})` : "<h3>", h.text, "Pass"])
+                    ]
+                }
+            }),
+
+        dd('evidence', 'Reference cues', 15, externalLinks.length ? 100 : 0,
+            `${externalLinks.length} external reference link(s). Sources and claims have not been verified.`,
+            'Support material claims with relevant, verifiable references from authoritative external sources.',
+            {
+                found: externalLinks.slice(0, 8).map(u => `External link: ${u}`),
+                missing: externalLinks.length === 0 ? ['No external links found — add at least one authoritative outbound link to support claims (e.g. standards bodies, research, official docs)'] : [],
+                items: [
+                    item('External links found', String(externalLinks.length), externalLinks.length > 0 ? 'ok' : 'fail'),
+                    ...externalLinks.slice(0, 5).map(u => item('Link', u, 'info')),
+                    ...(externalLinks.length > 5 ? [item('Additional links', `+${externalLinks.length - 5} more`, 'info')] : []),
+                ],
+                table: {
+                    headers: ["URL", "Domain", "Anchor text"],
+                    rows: extLinks.map(l => [l.href, l.domain, l.text])
+                }
+            }),
+
+        dd('schema', 'Structured data cues', 10,
+            invalid ? 0 : valid ? schemaCompletenessAvg : 0,
+            `${schemaTypes.length} typed JSON-LD block(s); ${invalid} invalid or untyped. Types: ${schemaTypes.length ? schemaTypes.join(', ') : 'none'}. Avg completeness: ${schemaCompletenessAvg}%.`,
+            'Add JSON-LD structured data matching the page content. Fill all required + recommended properties. Validate at schema.org/validator.',
+            {
+                found: [...schemaTypes.map(t => `JSON-LD type: ${t}`), ...(schemaCompletenessAvg > 0 ? [`Schema completeness: ${schemaCompletenessAvg}%`] : [])],
+                missing: [
+                    ...(schemaTypes.length === 0 && invalid === 0 ? ['No JSON-LD found — add a <script type="application/ld+json"> block in <head> matching the page type (Article, FAQPage, Product, Organization, etc.)'] : []),
+                    ...(invalid > 0 ? [`${invalid} invalid/untyped JSON-LD block(s) — fix syntax or add @type property`] : []),
+                    ...jsonLdBlocks.filter(b => b.missing?.length).flatMap(b => b.missing!.slice(0, 3).map(p => `Block #${b.index} missing: ${p}`)),
+                ],
+                items: [
+                    item('JSON-LD blocks', String(schemaTypes.length + invalid), (schemaTypes.length > 0 && invalid === 0) ? 'ok' : (schemaTypes.length === 0 && invalid === 0) ? 'fail' : 'warn'),
+                    item('Schema completeness', schemaCompletenessAvg ? `${schemaCompletenessAvg}%` : 'N/A', schemaCompletenessAvg >= 80 ? 'ok' : schemaCompletenessAvg >= 50 ? 'warn' : 'fail'),
+                    ...schemaTypes.map(t => item('@type', t, 'ok')),
+                    ...(invalid > 0 ? [item('Invalid blocks', `${invalid} block(s) with syntax errors or missing @type`, 'fail')] : []),
+                ],
+                table: {
+                    headers: ["Block", "@type", "Completeness", "Missing Properties"],
+                    rows: jsonLdBlocks.map(b => [
+                        `Block #${b.index}`,
+                        b.type,
+                        b.valid ? `${b.completeness ?? 0}%` : 'Invalid',
+                        b.valid && b.missing?.length ? b.missing.slice(0, 3).join(', ') : (b.valid ? '—' : b.type)
+                    ])
+                }
+            }),
+
+        dd('query', 'Query readiness', 10, questionPatterns.length ? 100 : 0,
+            `Detected ${questionPatterns.length} question-like heading(s).`,
+            'Structure headers as direct questions (ending with ?) or step-by-step instructions.',
+            {
+                found: questionPatterns.map(q => `Question heading: "${q}"`),
+                missing: questionPatterns.length === 0 ? ['No question-like headings detected — structure H2/H3s to match direct user queries'] : [],
+                items: [
+                    item('FAQ Patterns', questionPatterns.length > 0 ? `${questionPatterns.length} detected` : 'None', questionPatterns.length > 0 ? 'ok' : 'warn'),
+                    item('Numbered lists (<ol>)', hasOl ? 'Found' : 'None', hasOl ? 'ok' : 'info'),
+                    item('Definition lists (<dl>)', hasDl ? 'Found' : 'None', hasDl ? 'ok' : 'info'),
+                ],
+                table: {
+                    headers: ["Pattern / Element", "Detected", "Details"],
+                    rows: [
+                        ["FAQ patterns (Question H2/H3)", questionPatterns.length > 0 ? "Yes" : "No", questionPatterns.length ? `${questionPatterns.length} detected: ${questionPatterns.join(', ')}` : "None"],
+                        ["Numbered lists (<ol>)", hasOl ? "Yes" : "No", hasOl ? "Found step-by-step list" : "No <ol> tags found"],
+                        ["Definition lists (<dl>)", hasDl ? "Yes" : "No", hasDl ? "Found definition lists" : "No <dl> tags found"]
+                    ]
+                }
+            }),
+
+        dd('freshness', 'Content freshness', 5, null,
+            'Publication dates cannot be verified from HTML alone.',
+            'Add datePublished and dateModified to JSON-LD. Show a visible "Last updated" date on the page.',
+            {
+                found: [],
+                missing: ['Publication date not assessed — add visible "Last updated" date and datePublished/dateModified in JSON-LD'],
+                items: [
+                    item('Assessment', 'Not measurable from HTML — requires dated source of truth', 'info'),
+                    item('Recommended', 'Add <time datetime="YYYY-MM-DD"> and JSON-LD datePublished/dateModified', 'info'),
+                ],
+                table: {
+                    headers: ["Check", "Result"],
+                    rows: [
+                        ["Assessment", "Not measurable from HTML — requires dated source of truth"],
+                        ["Recommended", "Add <time datetime=\"YYYY-MM-DD\"> and JSON-LD datePublished/dateModified"]
+                    ]
+                }
+            }),
+
+        dd('authority', 'External authority', 5, null,
+            'Third-party reputation has not been assessed.',
+            'Build backlinks from authoritative domains. Pursue press coverage, analyst mentions, and partner directories.',
+            {
+                found: [],
+                missing: ['External authority requires third-party data — not assessable from HTML alone'],
+                items: [
+                    item('Assessment', 'Not measurable from HTML — requires backlink/reputation data', 'info'),
+                    item('Recommended', 'Run Google Search Console, Ahrefs or Moz to check domain authority and backlink profile', 'info'),
+                ],
+                table: {
+                    headers: ["Check", "Result"],
+                    rows: [
+                        ["Assessment", "Not measurable from HTML — requires backlink/reputation data"],
+                        ["Recommended", "Run Google Search Console, Ahrefs or Moz to check domain authority and backlink profile"]
+                    ]
+                }
+            }),
+
+        dd('measurement', 'Monitoring coverage', 5, null,
+            'No observation data linked to this page.',
+            'Go to Observations tab → run queries from the Query universe → track mention and citation rates monthly.',
+            {
+                found: [],
+                missing: ['No AI observation data — run queries in the Observations tab to measure GEO score'],
+                items: [
+                    item('Assessment', 'Not measurable from HTML — requires AI provider observations', 'info'),
+                    item('How to fix', 'Observations tab → select a query → Run query & save', 'info'),
+                ],
+                table: {
+                    headers: ["Check", "Result"],
+                    rows: [
+                        ["Assessment", "Not measurable from HTML — requires AI provider observations"],
+                        ["How to fix", "Observations tab → select a query → Run query & save"]
+                    ]
+                }
+            }),
+
+        // ── Accessibility dimension ──────────────────────────────────────────
+        (()=>{
+            const hasViewport = /<meta\b[^>]*name\s*=\s*["']viewport["'][^>]*>/i.test(clean);
+            const viewportContent = clean.match(/<meta\b[^>]*name\s*=\s*["']viewport["'][^>]*content\s*=\s*["']([^"']+)["']/i)?.[1] ?? '';
+            const hasLang = /<html\b[^>]*\blang\s*=/i.test(clean);
+            const langVal = clean.match(/<html\b[^>]*\blang\s*=\s*["']([^"']+)["']/i)?.[1] ?? '';
+            const imgsNoAlt = extractedImages.filter(img => !img.hasAlt);
+            const interactiveInputs = extractedInputs.filter(i => !['hidden','submit','button','reset'].includes(i.type));
+            const headings = [...clean.matchAll(/<(h[1-6])\b[^>]*>/gi)].map(m => parseInt(m[1][1]));
+            let headingOrderOk = true;
+            for (let i = 1; i < headings.length; i++) { if (headings[i] - headings[i-1] > 1) { headingOrderOk = false; break; } }
+            const buttons = [...clean.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/gi)];
+            const emptyButtons = buttons.filter(m => {
+                const text = m[2].replace(/<[^>]+>/g, '').trim();
+                return !text && !/aria-label\s*=/i.test(m[1]);
+            });
+            // Score: % of critical checks passing
+            const checks = [
+                imgsNoAlt.length === 0,
+                hasViewport,
+                hasLang,
+                headingOrderOk || headings.length === 0,
+                emptyButtons.length === 0,
+            ];
+            const score = Math.round(checks.filter(Boolean).length / checks.length * 100);
+            return dd('accessibility', 'Accessibility', 0,  // weight 0 — informational, not counted in SEO score
+                score,
+                `${imgsNoAlt.length} image(s) missing alt; viewport ${hasViewport ? 'present' : 'missing'}; lang ${hasLang ? `"${langVal}"` : 'missing'}; heading order ${headingOrderOk ? 'ok' : 'skips detected'}; ${emptyButtons.length} empty button(s).`,
+                'Fix alt text, add lang attribute, ensure viewport meta, maintain heading order, add button labels.',
+                {
+                    found: [
+                        ...(hasViewport ? [`Viewport: "${viewportContent}"`] : []),
+                        ...(hasLang ? [`HTML lang="${langVal}"`] : []),
+                        ...(imgsNoAlt.length === 0 && extractedImages.length > 0 ? [`All ${extractedImages.length} image(s) have alt text`] : []),
+                        ...(emptyButtons.length === 0 && buttons.length > 0 ? [`All ${buttons.length} button(s) have accessible names`] : []),
+                    ],
+                    missing: [
+                        ...(!hasViewport ? ['<meta name="viewport" content="width=device-width, initial-scale=1"> — missing from <head>'] : []),
+                        ...(!hasLang ? ['lang attribute missing from <html> element — add lang="en"'] : []),
+                        ...(imgsNoAlt.length > 0 ? [`${imgsNoAlt.length} image(s) missing alt attribute`] : []),
+                        ...(!headingOrderOk ? ['Heading order skips levels — e.g. h1 → h3 skips h2'] : []),
+                        ...(emptyButtons.length > 0 ? [`${emptyButtons.length} button(s) with no visible text or aria-label`] : []),
+                    ],
+                    items: [
+                        item('Images without alt', imgsNoAlt.length === 0 ? `All ${extractedImages.length} image(s) have alt` : `${imgsNoAlt.length} of ${extractedImages.length} missing alt`, imgsNoAlt.length === 0 ? 'ok' : 'fail'),
+                        item('Viewport meta', hasViewport ? viewportContent || 'present' : 'MISSING', hasViewport ? 'ok' : 'fail'),
+                        item('HTML lang attribute', hasLang ? `lang="${langVal}"` : 'MISSING', hasLang ? 'ok' : 'fail'),
+                        item('Heading order', headings.length === 0 ? 'No headings' : headingOrderOk ? `ok (${headings.map(h=>`h${h}`).join('→')})` : `SKIP DETECTED (${headings.map(h=>`h${h}`).join('→')})`, headingOrderOk ? 'ok' : 'warn'),
+                        item('Empty buttons', emptyButtons.length === 0 ? `${buttons.length} button(s) all have names` : `${emptyButtons.length} button(s) missing accessible name`, emptyButtons.length === 0 ? 'ok' : 'fail'),
+                        item('Interactive inputs', interactiveInputs.length > 0 ? `${interactiveInputs.length} found` : 'None', 'info'),
+                    ],
+                    table: {
+                        headers: ["Check", "Finding", "Status"],
+                        rows: [
+                            ["Images — alt text", imgsNoAlt.length === 0 ? `All ${extractedImages.length} have alt` : `${imgsNoAlt.length}/${extractedImages.length} missing alt`, imgsNoAlt.length === 0 ? "Pass" : "Fail"],
+                            ...extractedImages.slice(0, 8).map(img => ["  img src", img.src.slice(0, 80) || "(no src)", img.hasAlt ? `alt="${img.alt}"` : "MISSING alt"] as string[]),
+                            ["Viewport meta", hasViewport ? viewportContent : "MISSING", hasViewport ? "Pass" : "Fail"],
+                            ["HTML lang", hasLang ? `lang="${langVal}"` : "MISSING", hasLang ? "Pass" : "Fail"],
+                            ["Heading order", headings.length === 0 ? "No headings" : headings.map(h=>`h${h}`).join(' → '), headingOrderOk ? "Pass" : "Skip detected"],
+                            ["Empty buttons", emptyButtons.length === 0 ? "None" : `${emptyButtons.length} found`, emptyButtons.length === 0 ? "Pass" : "Fail"],
+                        ]
+                    }
+                });
+        })(),
+
+        // ── Best Practices dimension ─────────────────────────────────────────
+        (()=>{
+            const hasDoctype = /^\s*<!doctype\s+html\b/i.test(html);
+            const hasCharset = /<meta\b[^>]*charset\s*=/i.test(clean);
+            const charsetVal = clean.match(/<meta\b[^>]*charset\s*=\s*["']?([^"'\s>]+)/i)?.[1] ?? '';
+            const isHttps = !!(c.domain && c.domain.startsWith('https://'));
+            // Render-blocking scripts in head
+            const headHtml = clean.match(/<head\b[^>]*>([\s\S]*?)<\/head>/i)?.[1] ?? '';
+            const blockingScripts: string[] = [];
+            for (const m of headHtml.matchAll(/<script\b([^>]*)>/gi)) {
+                const a = m[1];
+                if (/\bsrc\s*=/i.test(a) && !/\b(async|defer)\b/i.test(a)) {
+                    const src = a.match(/\bsrc\s*=\s*["']([^"']+)["']/i)?.[1] ?? '(unknown)';
+                    blockingScripts.push(src);
+                }
+            }
+            // Images missing dimensions
+            const imgsMissingDims = extractedImages.filter(img => {
+                const tag = clean.match(new RegExp(`<img[^>]*src=["']${img.src.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}["'][^>]*>`, 'i'))?.[0] ?? '';
+                return !/\bwidth\s*=/i.test(tag) || !/\bheight\s*=/i.test(tag);
+            });
+            const checks = [isHttps, hasDoctype, hasCharset, blockingScripts.length === 0, imgsMissingDims.length === 0];
+            const score = Math.round(checks.filter(Boolean).length / checks.length * 100);
+            return dd('best-practices', 'Best Practices', 0,  // weight 0 — informational
+                score,
+                `HTTPS: ${isHttps ? 'yes' : 'no'}; doctype: ${hasDoctype ? 'present' : 'missing'}; charset: ${hasCharset ? charsetVal : 'missing'}; render-blocking scripts: ${blockingScripts.length}; images missing dimensions: ${imgsMissingDims.length}.`,
+                'Use HTTPS, declare doctype and charset, add async/defer to head scripts, add width/height to images.',
+                {
+                    found: [
+                        ...(isHttps ? ['HTTPS — domain uses secure connection'] : []),
+                        ...(hasDoctype ? ['<!DOCTYPE html> declared'] : []),
+                        ...(hasCharset ? [`charset="${charsetVal}" declared`] : []),
+                        ...(blockingScripts.length === 0 ? ['No render-blocking scripts in <head>'] : []),
+                        ...(imgsMissingDims.length === 0 && extractedImages.length > 0 ? ['All images have explicit width/height'] : []),
+                    ],
+                    missing: [
+                        ...(!isHttps ? ['HTTPS not detected on domain — serve all pages over TLS'] : []),
+                        ...(!hasDoctype ? ['<!DOCTYPE html> missing — add as first line of document'] : []),
+                        ...(!hasCharset ? ['<meta charset="UTF-8"> missing — add as first element in <head>'] : []),
+                        ...(blockingScripts.length > 0 ? [`${blockingScripts.length} render-blocking script(s) in <head> — add defer or async`] : []),
+                        ...(imgsMissingDims.length > 0 ? [`${imgsMissingDims.length} image(s) missing explicit width/height — causes layout shift (CLS)`] : []),
+                    ],
+                    items: [
+                        item('HTTPS', isHttps ? 'Yes' : 'Not detected on domain', isHttps ? 'ok' : 'warn'),
+                        item('DOCTYPE', hasDoctype ? '<!DOCTYPE html> present' : 'MISSING', hasDoctype ? 'ok' : 'fail'),
+                        item('Charset', hasCharset ? `charset="${charsetVal}"` : 'MISSING', hasCharset ? 'ok' : 'fail'),
+                        item('Render-blocking scripts', blockingScripts.length === 0 ? 'None in <head>' : `${blockingScripts.length} script(s) block rendering`, blockingScripts.length === 0 ? 'ok' : 'fail'),
+                        item('Image dimensions', imgsMissingDims.length === 0 ? `All ${extractedImages.length} images have dimensions` : `${imgsMissingDims.length}/${extractedImages.length} missing width/height`, imgsMissingDims.length === 0 ? 'ok' : 'warn'),
+                    ],
+                    table: {
+                        headers: ["Check", "Finding", "Status"],
+                        rows: [
+                            ["HTTPS", isHttps ? "Domain uses HTTPS" : "HTTP only — upgrade required", isHttps ? "Pass" : "Fail"],
+                            ["DOCTYPE", hasDoctype ? "<!DOCTYPE html> present" : "MISSING", hasDoctype ? "Pass" : "Fail"],
+                            ["Charset", hasCharset ? `charset="${charsetVal}"` : "MISSING", hasCharset ? "Pass" : "Fail"],
+                            ["Render-blocking scripts", blockingScripts.length === 0 ? "None" : `${blockingScripts.length} found`, blockingScripts.length === 0 ? "Pass" : "Fail"],
+                            ...blockingScripts.slice(0, 5).map(src => ["  Script src", src.slice(0, 80), "Add defer or async"] as string[]),
+                            ["Image dimensions", imgsMissingDims.length === 0 ? "All have width+height" : `${imgsMissingDims.length} missing`, imgsMissingDims.length === 0 ? "Pass" : "Warning"],
+                            ...imgsMissingDims.slice(0, 5).map(img => ["  img src", img.src.slice(0, 80) || "(no src)", "Missing width/height"] as string[]),
+                        ]
+                    }
+                });
+        })(),
+
+        // ── Performance dimension ────────────────────────────────────────────
+        (()=>{
+            const headHtml2 = clean.match(/<head\b[^>]*>([\s\S]*?)<\/head>/i)?.[1] ?? '';
+            const blockingScripts2: string[] = [];
+            for (const m of headHtml2.matchAll(/<script\b([^>]*)>/gi)) {
+                const a = m[1];
+                if (/\bsrc\s*=/i.test(a) && !/\b(async|defer)\b/i.test(a)) {
+                    const src = a.match(/\bsrc\s*=\s*["']([^"']+)["']/i)?.[1] ?? '(unknown)';
+                    blockingScripts2.push(src);
+                }
+            }
+            const cssLinks = [...clean.matchAll(/<link\b([^>]*)>/gi)]
+                .map(m => m[1])
+                .filter(a => /rel\s*=\s*["']stylesheet["']/i.test(a))
+                .map(a => a.match(/href\s*=\s*["']([^"']+)["']/i)?.[1] ?? '');
+            const imgsMissingDims2 = extractedImages.filter(img => {
+                const tag = clean.match(new RegExp(`<img[^>]*src=["']${img.src.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}["'][^>]*>`, 'i'))?.[0] ?? '';
+                return !/\bwidth\s*=/i.test(tag) || !/\bheight\s*=/i.test(tag);
+            });
+            const inlineStyles = (clean.match(/<style\b[^>]*>[\s\S]*?<\/style>/gi) || []).length;
+            const checks = [blockingScripts2.length === 0, cssLinks.length <= 3, imgsMissingDims2.length === 0];
+            const score = Math.round(checks.filter(Boolean).length / checks.length * 100);
+            return dd('performance', 'Performance Signals', 0,  // weight 0 — informational
+                score,
+                `Render-blocking scripts: ${blockingScripts2.length}; CSS stylesheets: ${cssLinks.length}; images missing dimensions: ${imgsMissingDims2.length}; inline <style> blocks: ${inlineStyles}.`,
+                'Add defer/async to head scripts, reduce stylesheet count, add width/height to all images.',
+                {
+                    found: [
+                        ...(blockingScripts2.length === 0 ? ['No render-blocking scripts in <head>'] : []),
+                        ...(cssLinks.length <= 3 ? [`${cssLinks.length} CSS stylesheet(s) — within limit`] : []),
+                    ],
+                    missing: [
+                        ...(blockingScripts2.length > 0 ? [`${blockingScripts2.length} render-blocking script(s) in <head> — add async or defer`] : []),
+                        ...(cssLinks.length > 3 ? [`${cssLinks.length} CSS stylesheets — consider combining or inlining critical CSS`] : []),
+                        ...(imgsMissingDims2.length > 0 ? [`${imgsMissingDims2.length} image(s) missing width/height — causes Cumulative Layout Shift (CLS)`] : []),
+                    ],
+                    items: [
+                        item('Render-blocking scripts', blockingScripts2.length === 0 ? 'None in <head>' : `${blockingScripts2.length} found`, blockingScripts2.length === 0 ? 'ok' : 'fail'),
+                        item('CSS stylesheets', `${cssLinks.length} found`, cssLinks.length <= 3 ? 'ok' : 'warn'),
+                        item('Images missing dimensions', imgsMissingDims2.length === 0 ? `All ${extractedImages.length} ok` : `${imgsMissingDims2.length}/${extractedImages.length} missing`, imgsMissingDims2.length === 0 ? 'ok' : 'warn'),
+                        item('Inline <style> blocks', `${inlineStyles} found`, inlineStyles > 2 ? 'warn' : 'ok'),
+                    ],
+                    table: {
+                        headers: ["Signal", "Finding", "Impact"],
+                        rows: [
+                            ["Render-blocking scripts", blockingScripts2.length === 0 ? "None in <head>" : `${blockingScripts2.length} script(s) block rendering`, blockingScripts2.length === 0 ? "None" : "High — add defer/async"],
+                            ...blockingScripts2.slice(0, 5).map(src => ["  Script src", src.slice(0, 80), "Add defer or async"] as string[]),
+                            ["CSS stylesheets", `${cssLinks.length} link(s)`, cssLinks.length > 3 ? "Medium — combine sheets" : "Low"],
+                            ...cssLinks.slice(0, 4).map(href => ["  CSS href", href.slice(0, 80), ""] as string[]),
+                            ["Image dimensions missing", imgsMissingDims2.length === 0 ? "All have dimensions" : `${imgsMissingDims2.length} images`, imgsMissingDims2.length === 0 ? "None" : "Medium — fix CLS"],
+                            ["Inline <style> blocks", String(inlineStyles), inlineStyles > 2 ? "Low — consider external CSS" : "None"],
+                        ]
+                    }
+                });
+        })(),
+
+        // ── Reasoning Cues dimension ─────────────────────────────────────────
+        (()=>{
+            const CUES: {label: string; patterns: RegExp[]}[] = [
+                {label:'Step / sequence', patterns:[/\bstep\s*\d/i,/\bfirst[,\s]/i,/\bnext[,\s]/i,/\bfinally[,\s]/i,/\bthen[,\s]/i]},
+                {label:'Summary', patterns:[/\bin summary\b/i,/\bin short\b/i,/\bkey takeaway/i,/\bto summarize\b/i,/\bto conclude\b/i]},
+                {label:'Definition', patterns:[/\bis defined as\b/i,/\brefers to\b/i,/\bmeans that\b/i,/\bwhat is\b/i,/\bdefinition of\b/i]},
+                {label:'Example', patterns:[/\bfor example\b/i,/\bfor instance\b/i,/\bsuch as\b/i,/\bconsider this\b/i,/\btake the case\b/i]},
+                {label:'Comparison', patterns:[/\bunlike\b/i,/\bin contrast\b/i,/\bcompared to\b/i,/\bwhereas\b/i,/\bon the other hand\b/i]},
+                {label:'Warning / caution', patterns:[/\bwarning[:\s]/i,/\bcaution[:\s]/i,/\bbe cautious\b/i,/\bavoid\b/i,/\bcommon mistake\b/i]},
+                {label:'Why it matters', patterns:[/\bwhy it matters\b/i,/\bimportant because\b/i,/\bthe reason\b/i,/\bbenefits of\b/i]},
+            ];
+            const foundCues: string[] = [];
+            const missingCues: string[] = [];
+            for (const cue of CUES) {
+                const hit = cue.patterns.some(p => p.test(visible));
+                if (hit) foundCues.push(cue.label);
+                else missingCues.push(cue.label);
+            }
+            const score = Math.round(foundCues.length / CUES.length * 100);
+            const items: DimensionItem[] = CUES.map(cue => {
+                const hit = cue.patterns.some(p => p.test(visible));
+                return item(cue.label, hit ? 'Detected in page text' : 'Not found', hit ? 'ok' : 'warn');
+            });
+            return dd('reasoning-cues', 'Reasoning Cues', 4, score,
+                `${foundCues.length}/${CUES.length} reasoning cue types detected: ${foundCues.join(', ') || 'none'}.`,
+                'Add explicit reasoning signals: step-by-step sequences, summary callouts, definitions, examples, comparisons, and warnings. These help LLMs extract and cite your content.',
+                {
+                    found: foundCues.map(c => `${c} cues detected in page text`),
+                    missing: missingCues.map(c => `Add ${c} language — e.g. "${c === 'Step / sequence' ? 'Step 1: …' : c === 'Summary' ? 'In summary, …' : c === 'Definition' ? '[Term] is defined as …' : c === 'Example' ? 'For example, …' : c === 'Comparison' ? 'Unlike [X], …' : c === 'Warning / caution' ? 'Warning: …' : 'This matters because …'}"`),
+                    items,
+                    table: {
+                        headers: ["Cue Type", "Status", "Example Phrase"],
+                        rows: CUES.map(cue => {
+                            const hit = cue.patterns.some(p => p.test(visible));
+                            const examples: Record<string, string> = {
+                                'Step / sequence': 'Step 1: …, First, …, Next, …',
+                                'Summary': 'In summary, …, Key takeaway: …',
+                                'Definition': '[Term] is defined as …, This refers to …',
+                                'Example': 'For example, …, Such as …',
+                                'Comparison': 'Unlike [X], …, Compared to …',
+                                'Warning / caution': 'Warning: …, Avoid …',
+                                'Why it matters': 'This matters because …, The benefit is …',
+                            };
+                            return [cue.label, hit ? '✓ Detected' : '✗ Missing', examples[cue.label] ?? ''] as string[];
+                        })
+                    }
+                });
+        })(),
+
+        // ── Passage Density dimension ────────────────────────────────────────
+        (()=>{
+            // Extract <p> tags and check if they are 100-300 token (~80-240 word) self-contained blocks
+            const paragraphs: {text: string; wordCount: number; ok: boolean}[] = [];
+            for (const m of clean.matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/gi)) {
+                const text = m[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+                if (!text || text.length < 20) continue;
+                const wordCount = text.split(/\s+/).length;
+                paragraphs.push({text: text.slice(0, 120), wordCount, ok: wordCount >= 15 && wordCount <= 240});
+            }
+            const total = paragraphs.length;
+            const goodPassages = paragraphs.filter(p => p.ok).length;
+            const tooShort = paragraphs.filter(p => p.wordCount < 15).length;
+            const tooLong = paragraphs.filter(p => p.wordCount > 240).length;
+            // Also check for FAQ pattern: <dt>/<dd> or question-style h2/h3
+            const hasFaq = /<dt\b/i.test(clean) || /<details\b/i.test(clean) ||
+                h2Texts.some(h => /\?$/.test(h.trim())) || h3Texts.some(h => /\?$/.test(h.trim()));
+            const hasLists = /<[uo]l\b/i.test(clean);
+            const hasTables = /<table\b/i.test(clean);
+            const passageScore = total === 0 ? 0 : Math.round(goodPassages / total * 100);
+            const formatBonus = [hasFaq, hasLists, hasTables].filter(Boolean).length * 8;
+            const score = Math.min(100, passageScore + formatBonus);
+            return dd('passage-density', 'Passage Density', 4, total === 0 ? null : score,
+                `${goodPassages}/${total} paragraphs are well-sized (15–240 words); ${tooShort} too short, ${tooLong} too long. FAQ: ${hasFaq ? 'yes' : 'no'}, Lists: ${hasLists ? 'yes' : 'no'}, Tables: ${hasTables ? 'yes' : 'no'}.`,
+                'Structure content as 100–300 token self-contained passages. Add FAQ sections (Q+A format), bullet lists, and comparison tables. Each block should stand alone so LLMs can extract and cite it.',
+                {
+                    found: [
+                        ...(goodPassages > 0 ? [`${goodPassages} well-sized paragraphs (15–240 words)`] : []),
+                        ...(hasFaq ? ['FAQ / Q&A pattern detected'] : []),
+                        ...(hasLists ? ['Unordered/ordered lists present'] : []),
+                        ...(hasTables ? ['Tables present for structured comparisons'] : []),
+                    ],
+                    missing: [
+                        ...(tooLong > 0 ? [`${tooLong} paragraph(s) over 240 words — split into smaller self-contained blocks`] : []),
+                        ...(tooShort > 0 ? [`${tooShort} very short paragraph(s) — merge or expand to carry a complete thought`] : []),
+                        ...(!hasFaq ? ['No FAQ section detected — add Q&A pairs using question-form H2/H3 or <details> elements'] : []),
+                        ...(!hasLists ? ['No bullet/numbered lists — add for step-by-step content and comparisons'] : []),
+                        ...(!hasTables ? ['No comparison tables — add <table> elements for feature/price/spec comparisons'] : []),
+                    ],
+                    items: [
+                        item('Well-sized passages', total === 0 ? 'No paragraphs found' : `${goodPassages}/${total} paragraphs (15–240 words)`, total === 0 ? 'warn' : goodPassages / total >= 0.7 ? 'ok' : 'warn'),
+                        item('Too-long paragraphs', tooLong === 0 ? 'None' : `${tooLong} over 240 words`, tooLong === 0 ? 'ok' : 'fail'),
+                        item('Too-short paragraphs', tooShort === 0 ? 'None' : `${tooShort} under 15 words`, tooShort === 0 ? 'ok' : 'warn'),
+                        item('FAQ / Q&A', hasFaq ? 'Detected' : 'Not found', hasFaq ? 'ok' : 'warn'),
+                        item('Lists (ul/ol)', hasLists ? 'Present' : 'Not found', hasLists ? 'ok' : 'warn'),
+                        item('Comparison tables', hasTables ? 'Present' : 'Not found', hasTables ? 'ok' : 'warn'),
+                    ],
+                    table: {
+                        headers: ["Check", "Finding", "Impact"],
+                        rows: [
+                            ["Total paragraphs", String(total), ""],
+                            ["Well-sized (15–240 words)", String(goodPassages), goodPassages === total ? "Excellent" : "Improve"],
+                            ["Too long (>240 words)", String(tooLong), tooLong > 0 ? "Split these" : "OK"],
+                            ["Too short (<15 words)", String(tooShort), tooShort > 0 ? "Expand or merge" : "OK"],
+                            ["FAQ / Q&A section", hasFaq ? "Yes" : "No", hasFaq ? "Good" : "Add FAQ section"],
+                            ["Lists (ul/ol)", hasLists ? "Yes" : "No", hasLists ? "Good" : "Add lists"],
+                            ["Tables", hasTables ? "Yes" : "No", hasTables ? "Good" : "Add comparison tables"],
+                            ...paragraphs.slice(0, 5).map(p => ["Sample paragraph", p.text.slice(0, 80) + '…', `${p.wordCount} words — ${p.ok ? 'ok' : p.wordCount < 15 ? 'too short' : 'too long'}`] as string[]),
+                        ]
+                    }
+                });
+        })(),
+
+        // ── Entity Links (sameAs) dimension ──────────────────────────────────
+        (()=>{
+            const entityScore = [hasWikidata, hasWikipedia, hasLinkedIn].filter(Boolean).length;
+            const entityScoreNorm = Math.round(entityScore / 3 * 100);
+            const sameAsLinks = allSameAs.slice(0, 10);
+            return dd('entity-links', 'Entity authority links', 5, schemaTypes.length === 0 ? null : entityScoreNorm,
+                `sameAs links: ${allSameAs.length > 0 ? allSameAs.join(', ') : 'none'}. Wikidata: ${hasWikidata ? 'yes' : 'no'}; Wikipedia: ${hasWikipedia ? 'yes' : 'no'}; LinkedIn: ${hasLinkedIn ? 'yes' : 'no'}.`,
+                'Add sameAs links in your Organization/Person JSON-LD pointing to Wikidata, Wikipedia, and LinkedIn profiles. This signals entity confidence to AI engines.',
+                {
+                    found: [
+                        ...(hasWikidata ? ['sameAs → Wikidata detected'] : []),
+                        ...(hasWikipedia ? ['sameAs → Wikipedia detected'] : []),
+                        ...(hasLinkedIn ? ['sameAs → LinkedIn detected'] : []),
+                        ...sameAsLinks.map(u => `sameAs: ${u}`),
+                    ],
+                    missing: [
+                        ...(schemaTypes.length === 0 ? ['No JSON-LD found — add Organization or Person schema with sameAs links'] : []),
+                        ...(!hasWikidata && schemaTypes.length > 0 ? ['sameAs → Wikidata missing — add wikidata.org/entity/Q… URL to Organization/Person schema'] : []),
+                        ...(!hasWikipedia && schemaTypes.length > 0 ? ['sameAs → Wikipedia missing — add en.wikipedia.org/wiki/… URL to Organization/Person schema'] : []),
+                        ...(!hasLinkedIn && schemaTypes.length > 0 ? ['sameAs → LinkedIn missing — add linkedin.com/company/… URL to Organization/Person schema'] : []),
+                    ],
+                    items: [
+                        item('Total sameAs links', String(allSameAs.length), allSameAs.length > 0 ? 'ok' : 'warn'),
+                        item('Wikidata', hasWikidata ? 'Linked' : 'Not found', hasWikidata ? 'ok' : 'warn'),
+                        item('Wikipedia', hasWikipedia ? 'Linked' : 'Not found', hasWikipedia ? 'ok' : 'warn'),
+                        item('LinkedIn', hasLinkedIn ? 'Linked' : 'Not found', hasLinkedIn ? 'ok' : 'warn'),
+                        ...sameAsLinks.map(u => item('sameAs URL', u, 'info')),
+                    ],
+                    table: {
+                        headers: ["Authority Source", "Detected", "URL"],
+                        rows: [
+                            ["Wikidata", hasWikidata ? "✓ Yes" : "✗ No", allSameAs.find(u => /wikidata\.org/i.test(u)) ?? "—"],
+                            ["Wikipedia", hasWikipedia ? "✓ Yes" : "✗ No", allSameAs.find(u => /wikipedia\.org/i.test(u)) ?? "—"],
+                            ["LinkedIn", hasLinkedIn ? "✓ Yes" : "✗ No", allSameAs.find(u => /linkedin\.com/i.test(u)) ?? "—"],
+                            ...allSameAs.filter(u => !/wikidata\.org|wikipedia\.org|linkedin\.com/i.test(u)).slice(0, 5).map(u => ["Other sameAs", "✓ Yes", u] as string[]),
+                        ]
+                    }
+                });
+        })(),
+    ];
+}
+export function queryUniverse(c: Client) { return (c.products.length ? c.products : [c.industry]).flatMap(p => [{ intent: 'Education', prompt: `What is ${p} and who is it for?` }, { intent: 'Evaluation', prompt: `Which ${p} providers should a business in ${c.market} evaluate?` }, { intent: 'Implementation', prompt: `How can a business implement ${p}?` }, ...c.competitors.map(k => ({ intent: 'Comparison', prompt: `How does ${c.name} compare with ${k} for ${p}?` }))]); }
+export function visibility(c: Client, rows: Observation[]) { const hostname = new URL(c.domain).hostname.replace(/^www\./, ''); const mentions = rows.filter(r => mentionsBrand(c, r.response)).length; const citations = rows.filter(r => r.citations.some(u => { const h = new URL(u).hostname.replace(/^www\./, ''); return h === hostname || h.endsWith('.' + hostname); })).length; return { sample: rows.length, mentionRate: rows.length ? Math.round(mentions / rows.length * 100) : null, citationRate: rows.length ? Math.round(citations / rows.length * 100) : null }; }

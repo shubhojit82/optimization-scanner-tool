@@ -1,0 +1,6 @@
+import type { Audit, Client } from './contracts';
+import { aggregate, analyzeHtml, subScores, RUBRIC_VERSION } from './scoring';
+export const sampleClient: Client = { id: 'demo', name: 'Northstar', domain: 'https://northstar.example', industry: 'Enterprise content management', products: ['Enterprise CMS', 'Digital asset management'], competitors: ['Atlas', 'Meridian'], market: 'United States', created: '2026-10-05T00:00:00Z' };
+export const sampleHtml = `<!doctype html><html><head><title>Northstar enterprise CMS</title><meta name="description" content="Northstar content management for enterprise teams."><link rel="canonical" href="https://northstar.example/products/cms"></head><body><main><h1>Northstar enterprise CMS</h1><p>Northstar helps content teams manage publishing workflows and digital experiences.</p><h2>Who is it for?</h2><p>Marketing and engineering teams managing multiple sites.</p><ul><li>Editorial workflow</li><li>API delivery</li></ul></main></body></html>`;
+const dimensions = analyzeHtml(sampleHtml, sampleClient);
+export const sampleAudit: Audit = { id: 'sample', clientId: 'demo', url: 'https://northstar.example/products/cms', created: '2026-10-05T00:00:00Z', version: RUBRIC_VERSION, source: 'html-import', hash: 'Illustrative sample', dimensions, ...aggregate(dimensions), subScores: subScores(dimensions) };

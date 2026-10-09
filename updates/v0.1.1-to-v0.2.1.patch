@@ -1,0 +1,1203 @@
+diff --git a/.env.cloud.example b/.env.cloud.example
+index 8ccdf40..fbf6167 100644
+--- a/.env.cloud.example
++++ b/.env.cloud.example
+@@ -4,3 +4,8 @@ GEO_ADMIN_USERNAME=admin
+ GEO_ADMIN_PASSWORD=REPLACE_WITH_A_UNIQUE_RANDOM_PASSWORD
+ GEO_ALLOWED_ORIGINS=https://geo.your-domain.com
+ GEO_PUBLIC_HOST=geo.your-domain.com
++
++# Optional: automatic observations. Keys remain on the server; never commit .env.
++# OpenAI API billing/account required; a ChatGPT subscription is separate.
++OPENAI_API_KEY=
++GEO_OPENAI_MODEL=gpt-4.1
+diff --git a/.env.example b/.env.example
+index 6b37167..cf593e1 100644
+--- a/.env.example
++++ b/.env.example
+@@ -5,3 +5,8 @@ GEO_BIND=127.0.0.1
+ PORT=8080
+ GEO_DATA_DIR=./data
+ GEO_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,http://localhost:8080,http://127.0.0.1:8080
++
++# Optional: automatic observations. Keys remain on the server; never commit .env.
++# OpenAI API billing/account required; a ChatGPT subscription is separate.
++OPENAI_API_KEY=
++GEO_OPENAI_MODEL=gpt-4.1
+diff --git a/README.md b/README.md
+index 7462c44..0644e76 100644
+--- a/README.md
++++ b/README.md
+@@ -1,13 +1,25 @@
+-# GEO Workbench — standalone source v0.1.1
++# GEO Workbench — standalone source v0.2.1
+ 
+ Complete first-stage GEO product source with a standalone Mac/Linux runtime. Start with [docs/SETUP.md](docs/SETUP.md), which includes local setup, cloud deployment and Git workflows.
+ 
++## Updating your existing local installation
++
++Read [UPGRADE.md](UPGRADE.md). The included Git patch upgrades v0.1.1 or v0.2.0 while preserving `data/` and `.env`.
++
++## Correcting an existing client identity
++
++Use **Edit client** next to the selected client. For this WFG workspace, use `World Financial Group` as the name and `WFG, WorldFinancialgroup` as explicit aliases. The update preserves the client ID, records and website. Saved observation rates recalculate using the new identity; historical audits retain their previous scores. Reimport page HTML to create a new audit under rubric `readiness-cues/1.1.0`.
++
++## Automatic observations
++
++Add `OPENAI_API_KEY` to your existing `.env`, keep `GEO_OPENAI_MODEL=gpt-4.1`, and restart. Select your client → Observations → choose a question → **Run query & save**. Keys stay on the server. Each run incurs API usage; a ChatGPT subscription does not provide API credits. See [docs/OBSERVATIONS.md](docs/OBSERVATIONS.md).
++
+ ## Quick start
+ 
+ Requires Node 24 and npm. After extracting the ZIP:
+ 
+ ```sh
+-cd geo-workbench
++cd geo-workbench-v0.2.1
+ cp .env.example .env
+ npm ci
+ npm run dev
+@@ -23,7 +35,7 @@ npm test
+ npm start
+ ```
+ 
+-`npm test` builds both server and client before running 16 regression/integration tests. Open http://localhost:8080 for the built app. Do not run the dev and built server simultaneously on port 8080.
++`npm test` builds both server and client before running 28 regression/integration tests. Open http://localhost:8080 for the built app. Do not run the dev and built server simultaneously on port 8080.
+ 
+ ## Source boundaries
+ 
+@@ -44,6 +56,6 @@ Root `npm` commands run the standalone edition. The old Sites entrypoints/config
+ 
+ ## Implemented scope
+ 
+-Client setup, HTML import, evidence/coverage scoring, candidate queries, manual AI observations, immutable audit history and report export. The Northstar client is illustrative. Live crawling, provider APIs, CMS connectors, organization teams and automatic publication remain future work.
++Client setup, HTML import, evidence/coverage scoring, candidate queries, OpenAI web-search observations, manual AI observations, immutable audit history and report export. The Northstar client is illustrative. Live crawling, additional provider APIs, CMS connectors, organization teams and automatic publication remain future work.
+ 
+ The standalone edition uses one configured owner. Local mode is restricted to loopback; the supplied cloud deployment uses HTTP Basic authentication over HTTPS. For enterprise teams, add OIDC/SSO, tenant memberships/RBAC and stronger secret management before broader use. SQLite suits the first single-instance deployment; move behind a PostgreSQL repository adapter before multiple application replicas.
+diff --git a/UPGRADE.md b/UPGRADE.md
+new file mode 100644
+index 0000000..d1dcec6
+--- /dev/null
++++ b/UPGRADE.md
+@@ -0,0 +1,44 @@
++# Update v0.1.1 or v0.2.0 to v0.2.1 on your Mac
++
++This download contains the complete source and two upgrade patches. Check the version in your existing `package.json`:
++
++- From **v0.2.0**, use `updates/v0.2.0-to-v0.2.1.patch`.
++- From **v0.1.1**, use `updates/v0.1.1-to-v0.2.1.patch`.
++
++Apply the matching patch to your existing installation to retain your clients and audits. The example commands below show the v0.2.0 upgrade.
++
++1. Stop your app with Control-C.
++2. Extract this release into a **separate** folder. Do not replace your old project with an empty fresh installation.
++3. In Terminal, enter your **existing** `geo-workbench` project directory. Back up its `data/` directory while the app is stopped. Keep `.env` and `GEO_LOCAL_USER` unchanged so you retain access to your records.
++4. Replace the placeholder patch path below with its actual extracted location:
++
++   ```sh
++   git apply --check /absolute/path/geo-workbench-v0.2.1/updates/v0.2.0-to-v0.2.1.patch
++   git apply /absolute/path/geo-workbench-v0.2.1/updates/v0.2.0-to-v0.2.1.patch
++   npm ci
++   npm run typecheck
++   npm test
++   ```
++
++   `git apply` works even if you have not initialized a repository. If the check reports a conflict, stop before applying and merge that file against the full source in this release. Each patch expects the original source for its starting version; it does not overwrite `data/` or `.env`.
++5. Add `OPENAI_API_KEY=your_api_key` and `GEO_OPENAI_MODEL=gpt-4.1` to your **existing** `.env`. Never commit that file.
++6. Run `npm run dev`, reload http://localhost:5173 and select your existing client. Click **Edit client**. For WFG, enter:
++
++   - Brand name: `World Financial Group`
++   - Brand aliases: `WFG, WorldFinancialgroup`
++
++   Save. Existing answers are re-evaluated; their text and timestamps stay unchanged. The old audit is preserved. Reimport page HTML if you want a fresh brand-cue assessment, then review your existing observations before running more questions.
++
++For a new installation, enter the extracted `geo-workbench-v0.2.1` folder, run `cp .env.example .env`, then `npm ci` and `npm run dev`. This creates a new empty database. Existing installations should use the patch above.
++
++## Commit and deploy your change
++
++Review `git diff` and `git status` in your existing Git repository. Stage the changed code/docs and new source/test files, then commit and push to your configured remote. `.env`, `data/` and build outputs are ignored. If you are starting Git for the first time, follow `docs/SETUP.md`.
++
++```sh
++git add README.md UPGRADE.md app src tests docs package.json package-lock.json .env.example .env.cloud.example
++git commit -m "Add editable client identity and brand aliases"
++git push
++```
++
++On your single cloud VM, pull that commit. Add the key to the VM's existing `.env` and run `docker compose up -d --build`. Keep the existing persistent volume and owner identity. Do not run `docker compose down -v`. HTTP Basic authentication must remain behind HTTPS as described in `docs/SETUP.md`.
+diff --git a/app/globals.css b/app/globals.css
+index f3f64b4..4df44c0 100644
+--- a/app/globals.css
++++ b/app/globals.css
+@@ -3,3 +3,4 @@
+ @media(min-width:1700px){.main main{padding:45px 50px}.dimension{grid-template-columns:180px 1fr 95px}}
+ @media(max-width:1200px){.sidebar{width:210px;padding:30px 15px}.main{margin-left:210px}.main main{padding:28px}.metrics{grid-template-columns:1fr 1fr}.content-grid{grid-template-columns:1fr}.score-card{min-height:220px}.clientbar>.chip{display:none}.guardrails>div{grid-template-columns:1fr}.brand{font-size:.9rem}.dimension{grid-template-columns:165px 1fr 95px}}
+ @media(max-width:720px){.shell{display:block}.sidebar{position:static;width:100%;padding:18px 20px}.brand{font-size:1rem}.sidebar nav{display:flex;overflow:auto;margin-top:18px;gap:6px}.nav{width:auto;flex-shrink:0;padding:10px;font-size:.8rem;margin:0}.nav svg{width:16px}.workspace-label,.sidebar-bottom{display:none}.main{margin-left:0}.topbar{height:50px;padding:0 20px}.main main{padding:24px 18px}.heading{align-items:flex-start}h1{font-size:1.7rem}.heading>.primary{font-size:.8rem;padding:10px}.eyebrow{font-size:.65rem}.subtitle{font-size:.875rem;line-height:1.6}.clientbar{padding:14px;flex-wrap:wrap}.clientbar>.secondary{margin-left:57px;padding:8px 12px}.metrics{gap:12px}.score-card{padding:19px;grid-column:span 2;min-height:210px}.metric-card{padding:20px 16px;min-height:190px}.metric-card:last-child{grid-column:span 2;min-height:165px}.metric-number{font-size:2.5rem}.panel-heading{padding:20px;flex-wrap:wrap}.dimensions{padding:12px 18px}.dimension{grid-template-columns:140px 1fr 78px;gap:10px}.dimension>div:first-child>span{font-size:.8rem}.unknown{font-size:.7rem}.panel-note{padding:15px 18px}.opportunities details{padding:20px}.integration-grid{grid-template-columns:1fr}.architecture-intro h2{font-size:1.8rem}.architecture-map{padding:15px}.layer{padding:16px 12px;gap:8px}.layer strong{font-size:.85rem}.layer small{font-size:.65rem}.footer{flex-direction:column;gap:8px}.form-grid{grid-template-columns:1fr;gap:0}dialog form{padding:22px}td,th{padding:14px 18px}.panel>table{table-layout:fixed}.intent{font-size:.7rem;padding:4px}.architecture-grid{gap:18px}}
++.observation-runner{margin-bottom:24px}.runner-form{padding:0 24px 24px}.runner-form select{display:block;width:100%;max-width:100%;border:1px solid #cfdae2;border-radius:5px;padding:11px 13px;margin-top:7px;background:#fff;font-size:.875rem;color:#213f50}.runner-form .form-grid>label{min-width:0}.runner-actions{display:flex;align-items:center;flex-wrap:wrap;gap:14px}.runner-actions .muted{font-size:.8rem}.runner-status{margin-top:18px;color:#0d8073}.provider-setup{background:#f0f6f7;border:1px solid #d9e7e7;border-radius:7px;padding:18px;margin-bottom:20px;font-size:.875rem;line-height:1.7}.provider-setup p{margin-top:8px}.provider-setup pre{white-space:pre-wrap;overflow-wrap:anywhere;padding:12px;background:#fff;border-radius:5px;margin:12px 0}.response a{color:#087c70;text-decoration:underline}.runner-form>.muted{margin-top:14px}
+diff --git a/app/observation-panel.tsx b/app/observation-panel.tsx
+new file mode 100644
+index 0000000..9ad17a2
+--- /dev/null
++++ b/app/observation-panel.tsx
+@@ -0,0 +1,69 @@
++import {useEffect, useRef, useState, type ReactNode} from 'react';
++import {ChevronDown, Globe, Plus} from 'lucide-react';
++import type {Client, Observation, ProviderInfo} from '../src/core/contracts';
++import {api} from './workbench-api';
++
++function Answer({observation: o}: {observation: Observation}) {
++    let cursor = 0;
++    const pieces: ReactNode[] = [];
++    for (const [i, a] of [...o.annotations || []].sort((a,b) => a.startIndex - b.startIndex).entries()) {
++        if (a.startIndex < cursor || a.endIndex > o.response.length || a.endIndex <= a.startIndex) continue;
++        pieces.push(o.response.slice(cursor, a.startIndex));
++        pieces.push(<a key={i} href={a.url} target="_blank" rel="noreferrer">{o.response.slice(a.startIndex, a.endIndex)}</a>);
++        cursor = a.endIndex;
++    }
++    pieces.push(o.response.slice(cursor));
++    return <p className="response">{pieces}</p>;
++}
++
++type Props = {client: Client; queries: {intent: string; prompt: string}[]; observations: Observation[];
++    initialPrompt: string; busy: boolean; onBusy: (busy: boolean) => void; onImport: () => void; onSaved: () => Promise<void>};
++
++export function ObservationPanel({client, queries, observations, initialPrompt, busy, onBusy, onImport, onSaved}: Props) {
++    const attempt = useRef<{prompt:string;provider:string;requestId:string}|null>(null);
++    const [providers, setProviders] = useState<ProviderInfo[]>([]);
++    const [providerId, setProviderId] = useState('openai');
++    const [prompt, setPrompt] = useState(initialPrompt || queries[0]?.prompt || '');
++    const [loading, setLoading] = useState(true);
++    const [error, setError] = useState('');
++    const [status, setStatus] = useState('');
++    useEffect(() => {setPrompt(initialPrompt || queries[0]?.prompt || ''); setStatus(''); setError(''); attempt.current=null;}, [client.id, initialPrompt]);
++    useEffect(() => {
++        let alive = true;
++        api<ProviderInfo[]>('providers').then(rows => {if (alive) setProviders(rows);})
++            .catch(e => {if (alive) setError(e.message);}).finally(() => {if (alive) setLoading(false);});
++        return () => {alive = false;};
++    }, []);
++    const provider = providers.find(p => p.id === providerId);
++    async function run(e: React.FormEvent) {
++        e.preventDefault(); onBusy(true); setError(''); setStatus('Searching the web and collecting an answer…');
++        try {
++            if(!attempt.current || attempt.current.prompt!==prompt || attempt.current.provider!==providerId) attempt.current={prompt,provider:providerId,requestId:crypto.randomUUID()};
++            await api<Observation>(`clients/${client.id}/observation-runs`, attempt.current);
++            attempt.current=null;
++            setStatus('Observation saved. Refreshing the evidence view…');
++            try {await onSaved(); setStatus('Observation saved. Expand it below to review the answer and citations.');}
++            catch {setError('Observation was saved, but the evidence view could not refresh. Reload the page to see it.'); setStatus('');}
++        } catch (e) {setError((e as Error).message); setStatus('');}
++        finally {onBusy(false);}
++    }
++    return <>
++        <div className="banner">API web-search results are a distinct sample from consumer ChatGPT or Google AI answers. Each run sends the question and target market to the selected provider.</div>
++        <section className="panel observation-runner">
++            <div className="panel-heading"><div><h2>Collect an observation</h2><p>Choose one relevant question. Review the answer before running more.</p></div><span className="chip">{loading?'Checking provider…':provider?.configured?'Configured':'Setup required'}</span></div>
++            <form onSubmit={run} className="runner-form">
++                <div className="form-grid"><label>AI provider<select value={providerId} onChange={e=>setProviderId(e.target.value)} disabled={busy||loading}>{providers.length?providers.map(p=><option key={p.id} value={p.id}>{p.label} · {p.model}</option>):<option value="openai">OpenAI web search</option>}</select></label>
++                <label>Start from query universe<select value="" disabled={busy} onChange={e=>setPrompt(e.target.value)}><option value="">Choose a question…</option>{queries.map((q,i)=><option key={i} value={q.prompt}>{q.prompt}</option>)}</select></label></div>
++                <label>Question<textarea value={prompt} onChange={e=>setPrompt(e.target.value)} required minLength={5} maxLength={2000} rows={3} disabled={busy}/></label>
++                {!loading && !provider?.configured && <div className="provider-setup"><strong>Connect the provider on your server</strong><p>Add your key to the existing <code>.env</code> file in the project root:</p><pre>{'OPENAI_API_KEY=your_api_key\nGEO_OPENAI_MODEL=gpt-4.1'}</pre><p>Stop the app, restart with <code>npm run dev</code>, then reload this page. Keep your key out of Git and chat.</p></div>}
++                <div className="runner-actions"><button className="primary" disabled={busy||loading||!provider?.configured||client.id==='demo'}>{busy?'Collecting…':'Run query & save'}</button><span className="muted">Paid API usage · up to 60 seconds · no automatic retries</span></div>
++                {client.id==='demo'&&<p className="muted">Select your client to collect real evidence.</p>}
++                {status&&<p className="runner-status" role="status">{status}</p>}{error&&<div className="error" role="alert">{error}</div>}
++            </form>
++        </section>
++        <section className="panel">
++            <div className="panel-heading"><div><h2>Saved observations</h2><p>Rates describe the latest 200 observations across API runs and imports. Repeat samples count separately. Mentions use the current brand name and configured aliases.</p></div><button className="secondary" disabled={busy} onClick={onImport}><Plus size={16}/>Import observations</button></div>
++            {observations.length?observations.map(o=><details className="observation" key={o.id}><summary><div><span className="intent">{o.engine} · {o.surface}</span><strong>{o.prompt}</strong><small>{o.model} · {new Date(o.observedAt).toLocaleString()} · {o.source==='ai-provider'?'API collection':'manual import'}</small></div><ChevronDown size={18}/></summary><Answer observation={o}/><div className="citation-links">{o.citations.length?o.citations.map((u,i)=><a href={u} key={i} target="_blank" rel="noreferrer">{u}</a>):<span className="muted">No citations were included in this answer.</span>}</div></details>):<div className="empty large"><Globe size={34}/><h3>No observations yet</h3><p>Connect a provider and run your first question above. Mention and citation rates appear after a successful collection.</p></div>}
++        </section>
++    </>;
++}
+diff --git a/app/workbench-api.ts b/app/workbench-api.ts
+new file mode 100644
+index 0000000..7c84b91
+--- /dev/null
++++ b/app/workbench-api.ts
+@@ -0,0 +1 @@
++export async function api<T=unknown>(path:string,body?:unknown):Promise<T>{const r=await fetch('/api/v1/'+path,{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json'}:undefined,body:body?JSON.stringify(body):undefined});const d=await r.json() as T & {error?:string};if(!r.ok)throw new Error(d.error||'Request failed');return d}
+diff --git a/app/workbench-ui.tsx b/app/workbench-ui.tsx
+index 7654189..3802f03 100644
+--- a/app/workbench-ui.tsx
++++ b/app/workbench-ui.tsx
+@@ -3,40 +3,43 @@ import {useEffect,useRef,useState} from 'react';
+ import {Activity,Layers,Globe,Plus,SlidersHorizontal,FileText,Network,Search,Check,Download,X,Upload,Database,Shield,ChevronDown,Link2} from 'lucide-react';
+ import type {Audit,Client,Observation} from '../src/core/contracts';
+ import {queryUniverse,visibility} from '../src/core/scoring';
++import {api} from './workbench-api';
++import {ObservationPanel} from './observation-panel';
+ import {sampleAudit,sampleClient,sampleHtml} from '../src/core/demo';
+ type Detail={client:Client;audits:Audit[];observations:Observation[];queries:{intent:string;prompt:string}[];visibility:ReturnType<typeof visibility>};
+ const demo:Detail={client:sampleClient,audits:[sampleAudit],observations:[],queries:queryUniverse(sampleClient),visibility:visibility(sampleClient,[])};
+ const nav=[{name:'Overview',icon:Activity},{name:'Query universe',icon:Search},{name:'Observations',icon:Globe},{name:'Integrations',icon:Link2},{name:'Architecture',icon:Network}];
+-const layers=[{name:'Experience & API',status:'Implemented',text:'React workspace and versioned HTTP endpoints. Input validation and identity checks sit at the boundary.'},{name:'Application services',status:'Implemented',text:'Client access, audit orchestration and observation imports depend on repository interfaces, never on a database SDK.'},{name:'Portable domain core',status:'Implemented',text:'Normalized client, audit and observation contracts. Versioned scoring rules and query generation have no framework or vendor dependencies.'},{name:'Infrastructure adapters',status:'Partial',text:'D1 repository is working. Crawler, AI provider, CMS draft and job queue ports are defined; their external adapters come next.'}];
+-async function api<T=unknown>(path:string,body?:unknown):Promise<T>{const r=await fetch('/api/v1/'+path,{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json'}:undefined,body:body?JSON.stringify(body):undefined});const d=await r.json() as T & {error?:string};if(!r.ok)throw new Error(d.error||'Request failed');return d}
++const layers=[{name:'Experience & API',status:'Implemented',text:'React workspace and versioned HTTP endpoints. Input validation and identity checks sit at the boundary.'},{name:'Application services',status:'Implemented',text:'Client access, audit orchestration and observation imports depend on repository interfaces, never on a database SDK.'},{name:'Portable domain core',status:'Implemented',text:'Normalized client, audit and observation contracts. Versioned scoring rules and query generation have no framework or vendor dependencies.'},{name:'Infrastructure adapters',status:'Partial',text:'SQLite and D1 repositories implement storage ports. OpenAI implements the AI provider port. Crawler, CMS draft and job queue adapters come next.'}];
++
+ function download(data:unknown,name:string){const u=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=u;a.download=name;a.click();URL.revokeObjectURL(u)}
+ export default function WorkbenchUI(){
+- const [clients,setClients]=useState<Client[]>([]),[detail,setDetail]=useState<Detail>(demo),[tab,setTab]=useState('Overview'),[modal,setModal]=useState<'client'|'audit'|'observation'|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[auth,setAuth]=useState(false),[loading,setLoading]=useState(true),[selectedLayer,setSelectedLayer]=useState(2);
++ const [clients,setClients]=useState<Client[]>([]),[detail,setDetail]=useState<Detail>(demo),[tab,setTab]=useState('Overview'),[modal,setModal]=useState<'client'|'audit'|'observation'|'identity'|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[auth,setAuth]=useState(false),[loading,setLoading]=useState(true),[selectedLayer,setSelectedLayer]=useState(2);
++ const [observationPrompt,setObservationPrompt]=useState('');
+  const [html,setHtml]=useState(''),[pageUrl,setPageUrl]=useState(''),[json,setJson]=useState('');const dialog=useRef<HTMLDialogElement>(null),generation=useRef(0);
+  const c=detail.client,isDemo=c.id==='demo',audit=detail.audits[0];
+  useEffect(()=>{api<Client[]>('clients').then((rows:Client[])=>{setClients(rows);if(rows[0])return api<Detail>('clients/'+rows[0].id).then(setDetail)}).catch(e=>{if(e.message==='Sign in required')setAuth(true);else setError(e.message)}).finally(()=>setLoading(false))},[]);
+  useEffect(()=>{if(modal)dialog.current?.showModal();else dialog.current?.close()},[modal]);
+  async function select(id:string){const g=++generation.current;setError('');setLoading(true);try{const d=id==='demo'?demo:await api<Detail>('clients/'+id);if(g===generation.current)setDetail(d)}catch(e){setError((e as Error).message)}finally{if(g===generation.current)setLoading(false)}}
+- function open(type:'client'|'audit'|'observation'){setError('');if(type!=='client'&&isDemo){setNotice('Create a client to save your own evidence. The sample is read-only.');return}setPageUrl(c.domain);setModal(type)}
+- async function submit(e:React.FormEvent<HTMLFormElement>){e.preventDefault();setBusy(true);setError('');const f=new FormData(e.currentTarget);try{if(modal==='client'){const split=(k:string)=>String(f.get(k)||'').split(',').map(s=>s.trim()).filter(Boolean);const n=await api<Client>('clients',{name:f.get('name'),domain:f.get('domain'),industry:f.get('industry'),market:f.get('market'),products:split('products'),competitors:split('competitors')});setClients(s=>[n,...s]);await select(n.id);setNotice('Client created. Import a page to establish the first baseline.')}else if(modal==='audit'){await api(`clients/${c.id}/audits`,{url:pageUrl,html});await select(c.id);setHtml('');setNotice('Audit saved with its evidence hash and rubric version.')}else{await api(`clients/${c.id}/observations`,JSON.parse(json));await select(c.id);setJson('');setNotice('Observations saved. Rates describe the latest 200 imported observations.')}setModal(null)}catch(e){setError((e as Error).message)}finally{setBusy(false)}}
++ function open(type:'client'|'audit'|'observation'|'identity'){setError('');if(type!=='client'&&isDemo){setNotice('Create a client to save your own evidence. The sample is read-only.');return}setPageUrl(c.domain);setModal(type)}
++ async function submit(e:React.FormEvent<HTMLFormElement>){e.preventDefault();setBusy(true);setError('');const f=new FormData(e.currentTarget);try{if(modal==='identity'){const n=await api<Client>(`clients/${c.id}/identity`,{name:f.get('name'),brandAliases:String(f.get('brandAliases')||'').split(',').map(s=>s.trim()).filter(Boolean)});setClients(rows=>rows.map(row=>row.id===n.id?n:row));setDetail(await api<Detail>('clients/'+n.id));setNotice('Brand identity saved. Mention rates were recalculated from your saved answers. Existing audit snapshots are unchanged; import the page again to reassess brand cues.')}else if(modal==='client'){const split=(k:string)=>String(f.get(k)||'').split(',').map(s=>s.trim()).filter(Boolean);const n=await api<Client>('clients',{name:f.get('name'),domain:f.get('domain'),industry:f.get('industry'),market:f.get('market'),products:split('products'),competitors:split('competitors')});setClients(s=>[n,...s]);await select(n.id);setNotice('Client created. Import a page to establish the first baseline.')}else if(modal==='audit'){await api(`clients/${c.id}/audits`,{url:pageUrl,html});await select(c.id);setHtml('');setNotice('Audit saved with its evidence hash and rubric version.')}else{await api(`clients/${c.id}/observations`,JSON.parse(json));await select(c.id);setJson('');setNotice('Observations saved. Rates describe the latest 200 observations.')}setModal(null)}catch(e){setError((e as Error).message)}finally{setBusy(false)}}
+  const opportunities=audit?.dimensions.filter(d=>d.score!==null&&d.score<100).sort((a,b)=>b.weight*(100-b.score!)-a.weight*(100-a.score!))||[];
+  return <div className="shell">
+- <aside className="sidebar"><a className="brand" href="/"><span className="brand-icon"><Layers size={23}/></span><span>GEO<span className="brand-light"> workbench</span></span></a><div className="workspace-label">CLIENT INTELLIGENCE</div><nav>{nav.map(n=><button key={n.name} className={tab===n.name?'nav active':'nav'} onClick={()=>setTab(n.name)}><n.icon size={19}/>{n.name}</button>)}</nav><div className="sidebar-bottom"><span className="phase">FOUNDATION · V0.1</span><p>Evidence before inference.</p><span>Client consulting workspace</span></div></aside>
++ <aside className="sidebar"><a className="brand" href="/"><span className="brand-icon"><Layers size={23}/></span><span>GEO<span className="brand-light"> workbench</span></span></a><div className="workspace-label">CLIENT INTELLIGENCE</div><nav>{nav.map(n=><button key={n.name} className={tab===n.name?'nav active':'nav'} onClick={()=>setTab(n.name)}><n.icon size={19}/>{n.name}</button>)}</nav><div className="sidebar-bottom"><span className="phase">OBSERVATIONS · V0.2</span><p>Evidence before inference.</p><span>Client consulting workspace</span></div></aside>
+  <div className="main"><header className="topbar"><span className="breadcrumb">Workspace <span>/</span> {tab}</span><span className="private"><Shield size={15}/> Workspace</span></header>
+  <main><div className="heading"><div><div className="eyebrow">GENERATIVE SEARCH INTELLIGENCE</div><h1>{tab==='Overview'?'Client overview':tab}</h1><p className="subtitle">{tab==='Overview'?'Turn implementation evidence into a focused action plan.':tab==='Query universe'?'A repeatable starting set of questions by intent.':tab==='Observations'?'Inspect the answers and citations behind measured visibility.':tab==='Integrations'?'One evidence model. Multiple sources.': 'A portable core with replaceable adapters.'}</p></div><button className="primary" onClick={()=>open('client')} disabled={busy}><Plus size={17}/>Add client</button></div>
+  {auth&&<div className="banner">Authentication required. Reload to sign in. <a href="/">Reload workspace</a></div>}
+  {error&&!modal&&<div className="error" role="alert">{error} <button onClick={()=>select(c.id)}>Retry</button></div>}{notice&&<div className="notice" role="status">{notice}<button aria-label="Dismiss notification" onClick={()=>setNotice('')}><X size={16}/></button></div>}
+- <div className="clientbar"><div className="client-avatar">{c.name.slice(0,1)}</div><div className="client-name"><label className="sr-only" htmlFor="client-select">Selected client</label><select id="client-select" disabled={loading||busy} value={c.id} onChange={e=>select(e.target.value)}><option value="demo">Northstar · sample client</option>{clients.map(n=><option key={n.id} value={n.id}>{n.name}</option>)}</select><span>{c.domain.replace('https://','')} <span className="divider">|</span> {c.market}</span></div><span className="chip">{isDemo?'ILLUSTRATIVE SAMPLE':'CLIENT WORKSPACE'}</span><button className="secondary" onClick={()=>open('audit')} disabled={loading}><Upload size={16}/>Import page</button></div>
++ <div className="clientbar"><div className="client-avatar">{c.name.slice(0,1)}</div><div className="client-name"><label className="sr-only" htmlFor="client-select">Selected client</label><select id="client-select" disabled={loading||busy} value={c.id} onChange={e=>select(e.target.value)}><option value="demo">Northstar · sample client</option>{clients.map(n=><option key={n.id} value={n.id}>{n.name}</option>)}</select><span>{c.domain.replace('https://','')} <span className="divider">|</span> {c.market}</span></div><span className="chip">{isDemo?'ILLUSTRATIVE SAMPLE':'CLIENT WORKSPACE'}</span><button className="secondary" onClick={()=>open('identity')} disabled={loading||busy||isDemo}>Edit client</button><button className="secondary" onClick={()=>open('audit')} disabled={loading||busy}><Upload size={16}/>Import page</button></div>
+  {loading?<div className="panel loading" role="status">Loading your workspace…</div>:<>
+- {tab==='Overview'&&<><div className="metrics"><section className="score-card"><div><span className="metric-label">Assessed readiness</span><div className="score-value">{audit?audit.score:'—'}<small>/100</small></div><p>{audit?`${audit.coverage}% rubric coverage`:'No page audit yet'}</p></div><div className="score-ring" style={{background:`conic-gradient(#57e3c2 ${(audit?.score||0)*3.6}deg,#284655 0)`}}><div><Layers size={25}/><span>GEO</span></div></div><footer>Page-level implementation cues · not a ranking</footer></section><section className="metric-card"><span className="metric-label">AI mention rate</span><div className="metric-number">{detail.visibility.mentionRate===null?'—':detail.visibility.mentionRate+'%'}</div><p>{detail.visibility.sample?`${detail.visibility.sample} imported observations`:'Not measured'}</p><button className="text-button" onClick={()=>{setTab('Observations')}}>Review observations</button></section><section className="metric-card"><span className="metric-label">Client citation rate</span><div className="metric-number">{detail.visibility.citationRate===null?'—':detail.visibility.citationRate+'%'}</div><p>{detail.visibility.sample?'Matched to client domain':'No engine evidence yet'}</p><span className="muted">Observed sample only</span></section><section className="metric-card"><span className="metric-label">Implementation gaps</span><div className="metric-number">{audit?opportunities.length:'—'}</div><p>{audit?'Assessed areas with missing cues':'Establish a baseline'}</p><span className="muted">{detail.queries.length} candidate prompts</span></section></div>
++ {tab==='Overview'&&<><div className="metrics"><section className="score-card"><div><span className="metric-label">Assessed readiness</span><div className="score-value">{audit?audit.score:'—'}<small>/100</small></div><p>{audit?`${audit.coverage}% rubric coverage`:'No page audit yet'}</p></div><div className="score-ring" style={{background:`conic-gradient(#57e3c2 ${(audit?.score||0)*3.6}deg,#284655 0)`}}><div><Layers size={25}/><span>GEO</span></div></div><footer>Page-level implementation cues · not a ranking</footer></section><section className="metric-card"><span className="metric-label">AI mention rate</span><div className="metric-number">{detail.visibility.mentionRate===null?'—':detail.visibility.mentionRate+'%'}</div><p>{detail.visibility.sample?`${detail.visibility.sample} observations`:'Not measured'}</p><button className="text-button" onClick={()=>{setTab('Observations')}}>Review observations</button></section><section className="metric-card"><span className="metric-label">Client citation rate</span><div className="metric-number">{detail.visibility.citationRate===null?'—':detail.visibility.citationRate+'%'}</div><p>{detail.visibility.sample?'Matched to client domain':'No engine evidence yet'}</p><span className="muted">Observed sample only</span></section><section className="metric-card"><span className="metric-label">Implementation gaps</span><div className="metric-number">{audit?opportunities.length:'—'}</div><p>{audit?'Assessed areas with missing cues':'Establish a baseline'}</p><span className="muted">{detail.queries.length} candidate prompts</span></section></div>
+  <div className="content-grid"><section className="panel"><div className="panel-heading"><div><h2>Readiness breakdown</h2><p>{audit?'Every score has traceable evidence.':'Import HTML to assess the first page.'}</p></div><SlidersHorizontal size={19}/></div>{audit?<div className="dimensions">{audit.dimensions.map(d=><div className="dimension" key={d.id}><div><span>{d.name}</span><small>{d.weight}% weight</small></div><div className="bar"><i style={{width:d.score===null?'0%':d.score+'%'}}/></div><span className={d.score===null?'unknown':'dimension-value'}>{d.score===null?'Not assessed':d.score}</span></div>)}</div>:<div className="empty"><FileText size={30}/><p>No evidence imported.</p><button className="primary" onClick={()=>open('audit')}>Import page</button></div>}<div className="panel-note">Score = weighted cue scores ÷ assessed weight. Unknown dimensions are excluded. High cue scores do not establish content quality or AI visibility.</div></section>
+  <section className="panel opportunities"><div className="panel-heading"><div><h2>Priority actions</h2><p>Ordered by weighted implementation gap.</p></div><span className="count">{opportunities.length}</span></div>{opportunities.length?opportunities.map((d,i)=><details key={d.id} open={i===0}><summary><span className="action-number">{String(i+1).padStart(2,'0')}</span><span>{d.name}<small>{d.weight*(100-d.score!)/100} weighted points unfulfilled</small></span><ChevronDown size={16}/></summary><p>{d.action}</p><div className="evidence"><span>EVIDENCE</span>{d.evidence}</div></details>):<div className="empty"><p>{audit?'No missing cues in assessed dimensions. Review unassessed areas next.':'Your action plan will appear after the first audit.'}</p></div>}</section></div>
+  <section className="panel history"><div className="panel-heading"><div><h2>Evidence ledger</h2><p>Immutable audit snapshots. Compare the same page under the same rubric.</p></div><button className="secondary" onClick={()=>download(detail,`geo-${c.name.toLowerCase()}-report.json`)}><Download size={16}/>Export report</button></div><div className="table-scroll"><table><thead><tr><th>Page</th><th>Source</th><th>Readiness</th><th>Coverage</th><th>Rubric</th><th>Captured</th></tr></thead><tbody>{detail.audits.map(a=><tr key={a.id}><td><span className="page-url">{a.url}</span><small className="hash">{a.hash.slice(0,16)}</small></td><td>HTML import</td><td>{a.score}/100</td><td>{a.coverage}%</td><td>{a.version}</td><td>{new Date(a.created).toLocaleDateString()}</td></tr>)}</tbody></table>{!detail.audits.length&&<div className="empty">No audits yet.</div>}</div></section></>}
+- {tab==='Query universe'&&<section className="panel"><div className="panel-heading"><div><h2>{detail.queries.length} candidate questions</h2><p>Generated from products, market and competitors. Validate relevance before measurement.</p></div><button className="secondary" onClick={()=>download(detail.queries,'geo-query-universe.json')}><Download size={16}/>Export prompts</button></div><table><thead><tr><th>Intent</th><th>Prompt</th><th>Execution</th></tr></thead><tbody>{detail.queries.map((q,i)=><tr key={i}><td><span className="intent">{q.intent}</span></td><td>{q.prompt}</td><td className="muted">Not run</td></tr>)}</tbody></table></section>}
+- {tab==='Observations'&&<><div className="banner">Manual imports retain engine, surface, model, prompt, response and collection time. API results and consumer chat experiences are distinct samples.</div><section className="panel"><div className="panel-heading"><div><h2>Engine evidence</h2><p>Rates use up to 200 latest imported observations. Duplicate imports are counted.</p></div><button className="primary" onClick={()=>open('observation')}><Plus size={16}/>Import observations</button></div>{detail.observations.length?detail.observations.map(o=><details className="observation" key={o.id}><summary><div><span className="intent">{o.engine} · {o.surface}</span><strong>{o.prompt}</strong><small>{o.model} · {new Date(o.observedAt).toLocaleString()} · manual import</small></div><ChevronDown size={18}/></summary><p className="response">{o.response}</p><div className="citation-links">{o.citations.map((u,i)=><a href={u} key={i} target="_blank" rel="noreferrer">{u}</a>)}</div></details>):<div className="empty large"><Globe size={34}/><h3>No AI visibility data yet</h3><p>Import collected answers and citations to calculate sample mention and citation rates.</p><button className="secondary" onClick={()=>{setJson(JSON.stringify([{engine:'Your provider',surface:'API or consumer search',model:'Record exact model',prompt:'Record the original question',response:'Paste the original response here',citations:[],observedAt:new Date().toISOString()}],null,2));open('observation')}}>Use import template</button></div>}</section></>}
+- {tab==='Integrations'&&<><div className="banner">No CMS or AI provider is connected. Imported content is never executed or published.</div><div className="integration-grid">{[{title:'Page evidence',icon:FileText,state:'Available',text:'Import HTML from any site or CMS. Bounded payloads, evidence hashes and transparent cue scoring.',items:['HTML import · implemented','HTTP crawler · planned','Rendered browser capture · planned']},{title:'AI observations',icon:Globe,state:'Import available',text:'Normalize answers and citations while retaining the collection surface and model.',items:['JSON observation import · implemented','OpenAI / Gemini / others · planned','Repeatable sampling jobs · planned']},{title:'CMS connectors',icon:Layers,state:'Port defined',text:'Read content and stage drafts through a common contract. Publishing requires a future approval workflow.',items:['AEM / Contentstack · planned','WordPress / Contentful · planned','Sitecore / Drupal · planned']},{title:'Data & jobs',icon:Database,state:'Storage available',text:'Persistence is isolated behind a repository. Scale heavy collection through a job queue.',items:['D1 repository · implemented','PostgreSQL adapter · planned','Queue / worker adapter · planned']}].map(x=><section className="panel integration" key={x.title}><x.icon size={28}/><span className="chip">{x.state}</span><h2>{x.title}</h2><p>{x.text}</p><ul>{x.items.map(t=><li key={t}>{t}</li>)}</ul></section>)}</div></>}
++ {tab==='Query universe'&&<section className="panel"><div className="panel-heading"><div><h2>{detail.queries.length} candidate questions</h2><p>Generated from products, market and competitors. Validate relevance before measurement.</p></div><button className="secondary" onClick={()=>download(detail.queries,'geo-query-universe.json')}><Download size={16}/>Export prompts</button></div><table><thead><tr><th>Intent</th><th>Prompt</th><th>Execution</th></tr></thead><tbody>{detail.queries.map((q,i)=><tr key={i}><td><span className="intent">{q.intent}</span></td><td>{q.prompt}</td><td><button className="text-button" disabled={busy||isDemo} onClick={()=>{setObservationPrompt(q.prompt);setTab('Observations')}}>{detail.observations.some(o=>o.prompt===q.prompt)?'Run again':'Run query'}</button></td></tr>)}</tbody></table></section>}
++ {tab==='Observations'&&<ObservationPanel client={c} queries={detail.queries} observations={detail.observations} initialPrompt={observationPrompt} busy={busy} onBusy={setBusy} onImport={()=>open('observation')} onSaved={async()=>{setDetail(await api<Detail>('clients/'+c.id))}}/>}
++ {tab==='Integrations'&&<><div className="banner">Configure AI providers in the server .env file. Open Observations to check connection status and run a query.</div><div className="integration-grid">{[{title:'Page evidence',icon:FileText,state:'Available',text:'Import HTML from any site or CMS. Bounded payloads, evidence hashes and transparent cue scoring.',items:['HTML import · implemented','HTTP crawler · planned','Rendered browser capture · planned']},{title:'AI observations',icon:Globe,state:'Runner available',text:'Normalize answers and citations while retaining the collection surface and model.',items:['JSON observation import · implemented','OpenAI web-search API · implemented','Gemini / other providers and campaign jobs · planned']},{title:'CMS connectors',icon:Layers,state:'Port defined',text:'Read content and stage drafts through a common contract. Publishing requires a future approval workflow.',items:['AEM / Contentstack · planned','WordPress / Contentful · planned','Sitecore / Drupal · planned']},{title:'Data & jobs',icon:Database,state:'Storage available',text:'Persistence is isolated behind a repository. Scale heavy collection through a job queue.',items:['SQLite / D1 repositories · implemented','PostgreSQL adapter · planned','Queue / worker adapter · planned']}].map(x=><section className="panel integration" key={x.title}><x.icon size={28}/><span className="chip">{x.state}</span><h2>{x.title}</h2><p>{x.text}</p><ul>{x.items.map(t=><li key={t}>{t}</li>)}</ul></section>)}</div></>}
+  {tab==='Architecture'&&<><section className="architecture-intro"><span className="phase">MODULAR MONOLITH FIRST</span><h2>Keep the domain stable.<br/>Replace what surrounds it.</h2><p>The first deployment runs together. Collection and evaluation can become independent workers without moving business rules into vendor integrations.</p></section><div className="content-grid architecture-grid"><section className="panel architecture-map">{layers.map((l,i)=><button key={l.name} className={selectedLayer===i?'layer selected':'layer'} onClick={()=>setSelectedLayer(i)}><span>{String(i+1).padStart(2,'0')}</span><strong>{l.name}</strong><small>{l.status}</small></button>)}<p>Dependencies point inward to contracts and domain rules.</p></section><section className="panel layer-detail"><Network size={27}/><h2>{layers[selectedLayer].name}</h2><span className="chip">{layers[selectedLayer].status}</span><p>{layers[selectedLayer].text}</p><div className="evidence"><span>SCALING SEQUENCE</span>1. Evidence and scoring baseline<br/>2. Queued crawl + provider sampling<br/>3. Tenant teams + connector approvals<br/>4. Isolate busy services using measured load</div></section></div><section className="panel guardrails"><h2>Foundation decisions</h2><div><p><Shield size={19}/><span><strong>Identity-scoped records</strong>Every read and write is scoped to the signed-in user. Organization roles come later.</span></p><p><FileText size={19}/><span><strong>Versioned evidence</strong>Audit history retains source hashes and rubric versions. Raw HTML is discarded after analysis.</span></p><p><Layers size={19}/><span><strong>Vendor-neutral contracts</strong>Provider and CMS SDKs belong in adapters. A connector is an implementation, not a change to the core.</span></p></div></section></>}
+- </>}<footer className="footer"><span>GEO Workbench <span>·</span> Foundation v0.1.1</span><span>{isDemo?'Sample data. No live client claims.':'No ranking guarantees. Evidence-based assessment.'}</span></footer></main></div>
+- <dialog ref={dialog} onCancel={e=>{if(busy)e.preventDefault();else setModal(null)}}><form onSubmit={submit}><div className="modal-heading"><h2>{modal==='client'?'Create a client':modal==='audit'?'Import page evidence':'Import AI observations'}</h2><button type="button" aria-label="Close dialog" onClick={()=>setModal(null)} disabled={busy}><X size={21}/></button></div>{modal==='client'?<><label>Brand name<input name="name" required minLength={2} maxLength={100} placeholder="Client or brand name"/></label><label>Website URL<input name="domain" required type="url" placeholder="https://client.com"/></label><div className="form-grid"><label>Industry<input name="industry" required minLength={2} maxLength={120} placeholder="Enterprise software"/></label><label>Target market<input name="market" required defaultValue="United States" minLength={2} maxLength={100}/></label></div><label>Products or services <small>Comma separated · up to 10</small><input name="products" placeholder="Enterprise CMS, Digital asset management"/></label><label>Competitor brands <small>Comma separated · up to 5</small><input name="competitors" placeholder="Competitor one, Competitor two"/></label></>:modal==='audit'?<><p className="muted">Paste exported or rendered HTML. This audits one page; live crawler access and site-wide authority remain unassessed.</p><label>Original page URL<input required type="url" value={pageUrl} onChange={e=>setPageUrl(e.target.value)}/></label><label>HTML evidence<textarea required minLength={20} maxLength={250000} value={html} onChange={e=>setHtml(e.target.value)} placeholder="Paste page HTML…" rows={10}/></label><label className="file-label"><Upload size={16}/>Or choose an HTML file<input type="file" accept=".html,.htm,text/html" onChange={async e=>{const f=e.target.files?.[0];if(f){if(f.size>250000){setError('HTML file exceeds 250 KB.');return}setHtml(await f.text())}}}/></label><small>HTML is analyzed as text and never rendered. Only findings and its SHA-256 hash are stored.</small></>:<><p className="muted">JSON array, up to 20 observations per import. Required fields: engine, surface, model, prompt, response, citations (URL array), observedAt (ISO timestamp).</p><textarea aria-label="Observation JSON" required value={json} onChange={e=>setJson(e.target.value)} rows={13} placeholder='[{"engine":"…","surface":"…","model":"…","prompt":"…","response":"…","citations":[],"observedAt":"…"}]'/><button className="text-button" type="button" onClick={()=>setJson(JSON.stringify([{engine:'Your provider',surface:'API',model:'Exact model',prompt:'The original question',response:'The original response',citations:[],observedAt:new Date().toISOString()}],null,2))}>Insert template</button></>}{error&&<div className="error" role="alert">{error}</div>}<div className="modal-footer"><button type="button" className="secondary" onClick={()=>setModal(null)} disabled={busy}>Cancel</button><button className="primary" disabled={busy||auth}>{busy?'Saving…':modal==='client'?'Create client':modal==='audit'?'Analyze & save':'Import & save'}</button></div></form></dialog>
++ </>}<footer className="footer"><span>GEO Workbench <span>·</span> Observations v0.2.1</span><span>{isDemo?'Sample data. No live client claims.':'No ranking guarantees. Evidence-based assessment.'}</span></footer></main></div>
++ <dialog ref={dialog} onCancel={e=>{if(busy)e.preventDefault();else setModal(null)}}><form onSubmit={submit}><div className="modal-heading"><h2>{modal==='identity'?'Edit client identity':modal==='client'?'Create a client':modal==='audit'?'Import page evidence':'Import AI observations'}</h2><button type="button" aria-label="Close dialog" onClick={()=>setModal(null)} disabled={busy}><X size={21}/></button></div>{modal==='identity'?<><p className="muted">Use the public brand name and verified aliases. Saved answers are re-evaluated using this identity. Historical audit scores stay unchanged.</p><label>Brand name<input name="name" required minLength={2} maxLength={100} defaultValue={c.name}/></label><label>Brand aliases <small>Comma separated · up to 10</small><input name="brandAliases" defaultValue={(c.brandAliases||[]).join(', ')} placeholder="WFG, WorldFinancialgroup"/></label><small>Website: {c.domain}. This update preserves your client ID, audits and observations.</small></>:modal==='client'?<><label>Brand name<input name="name" required minLength={2} maxLength={100} placeholder="Client or brand name"/></label><label>Website URL<input name="domain" required type="url" placeholder="https://client.com"/></label><div className="form-grid"><label>Industry<input name="industry" required minLength={2} maxLength={120} placeholder="Enterprise software"/></label><label>Target market<input name="market" required defaultValue="United States" minLength={2} maxLength={100}/></label></div><label>Products or services <small>Comma separated · up to 10</small><input name="products" placeholder="Enterprise CMS, Digital asset management"/></label><label>Competitor brands <small>Comma separated · up to 5</small><input name="competitors" placeholder="Competitor one, Competitor two"/></label></>:modal==='audit'?<><p className="muted">Paste exported or rendered HTML. This audits one page; live crawler access and site-wide authority remain unassessed.</p><label>Original page URL<input required type="url" value={pageUrl} onChange={e=>setPageUrl(e.target.value)}/></label><label>HTML evidence<textarea required minLength={20} maxLength={250000} value={html} onChange={e=>setHtml(e.target.value)} placeholder="Paste page HTML…" rows={10}/></label><label className="file-label"><Upload size={16}/>Or choose an HTML file<input type="file" accept=".html,.htm,text/html" onChange={async e=>{const f=e.target.files?.[0];if(f){if(f.size>250000){setError('HTML file exceeds 250 KB.');return}setHtml(await f.text())}}}/></label><small>HTML is analyzed as text and never rendered. Only findings and its SHA-256 hash are stored.</small></>:<><p className="muted">JSON array, up to 20 observations per import. Required fields: engine, surface, model, prompt, response, citations (URL array), observedAt (ISO timestamp).</p><textarea aria-label="Observation JSON" required value={json} onChange={e=>setJson(e.target.value)} rows={13} placeholder='[{"engine":"…","surface":"…","model":"…","prompt":"…","response":"…","citations":[],"observedAt":"…"}]'/><button className="text-button" type="button" onClick={()=>setJson(JSON.stringify([{engine:'Your provider',surface:'API',model:'Exact model',prompt:'The original question',response:'The original response',citations:[],observedAt:new Date().toISOString()}],null,2))}>Insert template</button></>}{error&&<div className="error" role="alert">{error}</div>}<div className="modal-footer"><button type="button" className="secondary" onClick={()=>setModal(null)} disabled={busy}>Cancel</button><button className="primary" disabled={busy||auth}>{busy?'Saving…':modal==='identity'?'Save identity':modal==='client'?'Create client':modal==='audit'?'Analyze & save':'Import & save'}</button></div></form></dialog>
+  </div>
+ }
+diff --git a/docs/ARCHITECTURE.md b/docs/ARCHITECTURE.md
+index c87e95b..a048c88 100644
+--- a/docs/ARCHITECTURE.md
++++ b/docs/ARCHITECTURE.md
+@@ -1,68 +1,52 @@
+-# Standalone edition addendum — v0.1.1
++# GEO Workbench architecture — v0.2.1
+ 
+-The export adds a Node HTTP/auth adapter and a SQLite repository at `src/server`. It reuses the domain and application services. Root npm commands now target React/Vite + Node, while the D1 and Sites route source remain as references. A complete unmodified hosted source snapshot is under `reference/GEO_Workbench_Sites_Source.tar.gz`.
++The standalone product is a modular monolith: React/Vite UI, a Node 24 HTTP composition root, application services, a framework-free domain core, and replaceable infrastructure adapters. SQLite supports one local machine or single VM. The exact earlier hosted React/Vinext + Worker/D1 edition is archived in `reference/`.
+ 
+-Local identity is a configured owner with loopback-only binding. Cloud identity uses one configured Basic-auth user behind Caddy HTTPS. Organization membership, OIDC/SSO and enterprise roles remain future work. The original hosting-specific identity assumptions below apply only to the original Sites runtime. See `SETUP.md` and `VALIDATION.md` for portable setup and completed checks.
++## Dependency boundaries
+ 
+----
+-
+-# GEO Workbench architecture — foundation v0.1
+-
+-This is the first working slice, not a production enterprise platform. It establishes evidence contracts, dependency boundaries, persistent client records, cue scoring, prompt generation and manual observations. Automated crawl, provider sampling, organization roles and CMS publishing are later slices.
+-
+-## Dependency rule
+-
+-UI → HTTP adapter → application services → domain contracts and rules.
+-Infrastructure adapters implement domain ports. The domain imports no React, Cloudflare, ORM, provider SDK or CMS package. The composition root is `src/adapters/http.ts`. The current runtime is React/Vinext + a Cloudflare Worker + D1; domain and application modules can move to Node without changing their behavior.
+-
+-| Module | Responsibility | Replaceable implementation |
++| Layer | Current responsibility | Replacement path |
+ | --- | --- | --- |
+-| `src/core/contracts.ts` | Canonical Client, Audit, Observation; repository, crawler, provider, CMS and queue ports | TypeScript contracts today; language-neutral HTTP/event schemas for future cross-language services |
+-| `src/core/scoring.ts` | Versioned cue rubric, prompt templates, observed mention/citation calculations | Rules can evolve under new versions without modifying historical results |
+-| `src/application/workbench.ts` | Owner access checks, audit orchestration, observation import | Runtime-independent application service |
+-| `src/adapters/d1-repository.ts` | Prepared SQL, persistent storage and bounded reads | PostgreSQL, another database or a service implementing Repository |
+-| `src/adapters/http.ts` | Validation, bounded request bodies, identity, origin checks, composition | HTTP framework and hosting identity adapter |
+-| `app/workbench-ui.tsx` | Client workspace | Any UI consuming the versioned API |
+-
+-The existing Crawler, AIProvider, CMSConnector and JobQueue interfaces are extension seams, not connected services. Any CMS can integrate if an adapter maps its content, identity, versions and permissions into these contracts. Changing language or hosting still requires adapter work; plug compatibility is not automatic.
+-
+-## Storage and security boundary
+-
+-New deployment is owner-private. Platform sign-in supplies a trusted user identifier; the host must strip spoofed identity headers before forwarding requests. The worker is not intended to be exposed directly on an untrusted ingress. Each client and record query includes `owner`; application services verify client ownership before reading or writing child records. Writes require a same-origin Origin header. SQL values are bound, request bodies are limited to 600 KB, HTML is limited to 250,000 characters, and manual imports to 20 observations per batch.
++| `app`, `frontend` | Workspace, client selection, query collector, evidence view | Another UI consuming versioned HTTP APIs |
++| `src/server/node-server.ts` | Composition, authentication, origin checks, request validation, adapter registration | Another HTTP framework or hosting runtime |
++| `src/application/workbench.ts` | Client access, audits, manual observation import | Reuse against another repository |
++| `src/application/observation-runner.ts` | Owner check, request replay, provider orchestration, immutable observation save | Invoke through a future durable worker |
++| `src/core` | Client/evidence contracts, query generation, scoring, visibility | Stable domain with no React, database SDK, provider SDK or CMS dependency |
++| `src/server/sqlite-repository.ts` | Repository and exact observation lookup ports | PostgreSQL adapter implementing both ports |
++| `src/server/providers/openai-provider.ts` | Credentialed HTTP transport and Responses API parsing | More adapters implementing `AIProvider` |
++| `src/adapters/d1-repository.ts`, `app/api` | Original hosted adapter reference; unused by standalone build | Wire a separate composition root deliberately |
+ 
+-This is **user isolation**, not full enterprise multitenancy. For organization teams, add workspace, membership, role and resource policy tables; resolve tenant membership on every request and worker job. Never accept a browser-supplied tenant as authorization. Add database constraints or PostgreSQL row-level policies as defense in depth, and transactional outbox records for queued work.
++Provider configuration lives only on the server. `/api/v1/providers` returns id, label, model and whether credentials were supplied. The application runner does not know API keys, HTTP vendor details or model-specific response schemas. Add a provider by implementing the port and registering it; scoring and client storage stay unchanged.
+ 
+-Clients and audit/observation envelopes are stored in indexed tables. JSON envelopes simplify the first slice; replace them with indexed normalized page/run/query/observation tables when reporting requires joins. Current list limits: 100 clients, latest 200 audits and latest 200 observations per client. Pagination, deduplication, retention and deletion are not yet implemented.
++## Collection and persistence
+ 
+-Imported HTML is analyzed as inert text and discarded after analysis. Immutable audit records retain dimensions, evidence explanations, URL, source, timestamp, SHA-256 input hash and rubric version. The hash proves input equality, not authenticity or recoverability. Raw evidence retention should later use object storage with tenant keys, encryption, retention and provenance. Do not send imported client content to a model until the provider and data handling are configured.
++A run accepts one prompt, provider ID and UUID request ID. The application checks client ownership before contacting the provider. A deterministic SHA-256 record ID scopes the UUID to the owner/client. Completed replays return existing evidence; active duplicate calls are rejected. Two requests may run concurrently per process. A successful provider response is stored atomically; failures do not create observations. The same SQLite schema remains compatible with v0.1.1 data. New optional provider metadata is stored in the existing JSON envelope.
+ 
+-## Scoring and measurement
++The OpenAI adapter requests web search, caps generated output at 2,048 tokens and applies a 60-second deadline. It checks completed response/search status, preserves the model, original question, answer, citations, inline citation ranges, provider response ID and observation time. It does not inject a target brand into the query. Server credentials are never returned to the UI. No automatic retries, scheduler, currency budget or cross-process lease is implemented.
+ 
+-The nine rubric weights total 100. HTML imports assess five dimensions totaling 70: page structure (10), brand clarity (15), answer structure (20), reference cues (15), structured data cues (10). Crawler access (15), freshness (5), external authority (5) and monitoring coverage (5) remain unknown.
++SQLite uses WAL, foreign keys, parameterized queries and transactions. Each read filters owner; application services verify client access before writes. List limits remain 100 clients and 200 latest records of each kind. JSON imports retain their manual source. Actual observations and imports share the same visibility calculation. Imported HTML is analyzed as inert text and discarded; the audit retains evidence findings, hash and rubric version.
+ 
+-`assessed score = round(sum(weight × cue score) / sum(assessed weights))`
++## Authentication and deployments
+ 
+-Unknowns are excluded and coverage is shown beside the score. This is a proprietary heuristic for implementation review, not a validated predictor of search ranking. A single external link satisfies a reference *cue*; it does not establish source quality. JSON-LD checks syntax and presence of a typed node; it does not validate schema semantics. The 150-word signal is a provisional rubric cue, not a search-engine requirement or recommendation to add filler. Regex-based extraction handles conventional quoted attributes, not arbitrary malformed HTML, DOM execution, CSS visibility or entity normalization. Improve parser coverage and calibrate the rubric against reviewed examples before commercial use.
++Local mode binds to loopback and enforces a localhost Host header. Cloud mode requires Basic credentials and HTTPS at the reverse proxy. Writes require an allowed Origin, input schemas reject extra fields, and bodies are bounded. Identity is derived from configured authentication, not spoofable request headers. When moving a database between runtimes, preserve the owner username to retain access.
+ 
+-Google's official guidance says foundational SEO and useful original content matter, with no special structured data requirement for generative search. Do not market structured data as a guaranteed GEO boost. OpenAI distinguishes search discovery controls from training crawler controls; the next crawler must assess them separately.
++The portable server is the active composition root. The hosted Site is not changed by this release. Reference adapters are not automatically compatible with every new application port; for example, hosted collection needs its own observation lookup and secret registration before the new runner can be wired there.
+ 
+-Mention rate is the percentage of imported response strings with a case-insensitive brand match using Unicode letter/number boundaries. Citation rate is the percentage with at least one supplied citation URL on the client domain/subdomain. Both denominators use up to the 200 latest imported rows, across all engines/surfaces. The app retains model, surface, prompt and observed timestamp. Rates describe that sample; they are not population estimates, consumer UI rankings, causal impact or recommendations. Manual citations and responses are user-supplied and not independently verified. Duplicate imports count twice. No GSOV, sentiment, inferred recommendation, projections or competitive rank is fabricated.
++## Evidence interpretation
+ 
+-## Scaling sequence and acceptance gates
++Readiness uses five assessed HTML cue dimensions totaling 70% of the rubric; unknown dimensions stay null and are excluded from the normalized weighted score. Scores assess implementation cues, not ranking or content quality. Brand matching uses the canonical brand name and explicitly configured aliases, with case-insensitive Unicode boundaries and flexible whitespace between words. It does not guess aliases. Citation matching requires the client hostname or a true subdomain. API results and consumer search experiences are distinct samples. Current rates combine the latest 200 observations and are descriptive, not population estimates or causal impact.
+ 
+-1. **Foundation (implemented):** immutable audit snapshots, bounded APIs, user isolation, cue scoring, query templates and manual observations. Domain tests and TypeScript build pass.
+-2. **Automated collection:** add queued HTTP crawler and rendered-page worker. Parse robots policies correctly, respect per-domain concurrency/rate budgets, bound redirects/bytes/time, reject private/link-local/loopback addresses at DNS and connection time, pin verified destination addresses, and defend against DNS rebinding. Capture headers, sitemap, robots, canonical and rendering evidence. Worker HTTP responses return a job ID; they do not run long crawls inline. Gate: reproducible snapshot on a real authorized site; cancellation, retries and SSRF tests.
+-3. **Provider measurement:** add one official API adapter with server-side secrets, quotas and a per-tenant cost ceiling. Specify surface, model, locale, timestamp, search settings and sampling repetitions. Separate API-grounded measurements from consumer products. Jobs need idempotency keys, retry classification, exponential backoff, dead-letter handling and immutable run/query versions. Gate: repeated observations with source evidence; provider failures never count as zero visibility.
+-4. **Enterprise and remediation:** memberships/RBAC, audit logs, approvals, draft diff/version preconditions and CMS adapters. Start with AEM or Contentstack based on the first client. Gate: read and draft staging without unintended publishing; authorization and version-conflict tests.
+-5. **Scale by measured bottleneck:** move capture/evaluation to separate worker services first. Replace storage adapter with PostgreSQL and object storage; introduce materialized analytics and partition retention as measured workloads demand. Use OpenAPI for synchronous contracts and a versioned event envelope (`id`, `tenantId`, `type`, `version`, `payload`, later trace/causation IDs). Move secrets, migrations, observability and identity integration explicitly; the core itself stays stable.
++## Next increments for scale
+ 
+-No premature microservices or Kubernetes dependency is introduced. Deployment portability comes from clear adapters, not from assuming every vendor is interchangeable. Add contract fixtures for every new adapter and verify it against the same application service tests.
++1. Introduce durable campaign/run/query records and a `JobQueue` adapter. Add bounded campaigns, provider budgets, worker leases, progress, cancellation, reconciliation of uncertain paid calls, retry classification and idempotency across processes.
++2. Add independent provider adapters and surface/model filters. Preserve prompt versions, sampling settings and comparison cohorts.
++3. Implement queued crawling with bounded capture, safe outbound networking and reproducible evidence snapshots.
++4. Replace SQLite with PostgreSQL and add object storage when deploying multiple workers. Keep access checks in the application and owner filters in every storage adapter.
++5. Add organization membership, roles, audit logs and CMS read/draft adapters. Use version preconditions and explicit publication authorization.
+ 
+-## Next concrete build
++Move busy collection workers out of the HTTP process when measured load requires it. Do not call the current per-process concurrency set a distributed queue or assume SQLite and local authentication already support a multi-tenant cluster.
+ 
+-Implement an asynchronous crawler worker and CrawlRepository/JobQueue adapter, with a safe egress policy and a 20-page baseline per authorized client. Then integrate one AI search provider and a stable prompt-run model. These are separate increments with measurable acceptance gates.
++## Client identity correction
+ 
+-## Sources verified October 5, 2026
++`ClientIdentityService` depends on `Repository` and `ClientIdentityStore` ports. The SQLite implementation atomically updates only the name, aliases and update timestamp with an owner-scoped query. It preserves the website, creation time and all child records. `POST /api/v1/clients/{id}/identity` validates a name and up to 10 aliases; unrelated field changes are rejected. Aliases are trimmed and deduplicated case-insensitively.
+ 
+-- https://developers.google.com/search/docs/fundamentals/ai-optimization-guide
+-- https://developers.openai.com/api/docs/bots
++The dashboard recalculates mention rates against saved answers using the current identity; this is a matching correction, not new provider evidence or an increase in real-world visibility. Citation rates still depend on the unchanged client domain. Existing audit snapshots remain immutable. New audits use rubric `readiness-cues/1.1.0`, whose brand cue also recognizes aliases with word boundaries. Audits from earlier rubric versions should not be treated as a like-for-like score comparison without examining that rule change.
+diff --git a/docs/OBSERVATIONS.md b/docs/OBSERVATIONS.md
+new file mode 100644
+index 0000000..d96d703
+--- /dev/null
++++ b/docs/OBSERVATIONS.md
+@@ -0,0 +1,40 @@
++# Collect the first real observation
++
++1. Keep your existing client and audit; select that client in the workspace.
++2. Add these lines to the **existing** project-root `.env`:
++
++   ```dotenv
++   OPENAI_API_KEY=your_api_key
++   GEO_OPENAI_MODEL=gpt-4.1
++   ```
++
++   Obtain a project API key through https://platform.openai.com/api-keys and enable API billing as needed. Keep the key in `.env`, which Git ignores. Never paste it into the browser or chat. `.env.example` contains empty values only.
++3. Stop the running app with Control-C. Run `npm run dev` and reload http://localhost:5173.
++4. Click **Review observations** or **Observations**. The provider should show **Configured**. This means a key was loaded, not that its validity or quota has already been verified.
++5. Choose one relevant question from the query universe, or edit the question. Click **Run query & save**. This sends the question and client market to the selected provider and incurs API usage. It does not send imported HTML or automatically inject the client brand into the question.
++6. Expand the saved observation. Check the complete answer, clickable inline citations, source links, exact returned model and collection time. Then check Overview for sample mention/citation rates.
++
++**Query universe → Run query** also opens the collector with that question selected. JSON imports remain available for evidence collected from other providers or consumer experiences.
++
++## What the result means
++
++This adapter records the Responses API with web search, not the consumer ChatGPT interface. Those surfaces can return different answers. A missing client mention is valid evidence when a complete answer is collected. A failed request is not evidence of zero visibility and is never added to the denominator. Mention matching uses the current client brand name and explicit aliases. Correct these with **Edit client**; saved response text stays unchanged. Rates currently combine the latest 200 observations across surfaces/models; use the retained metadata to interpret the sample. Repeat runs are separate samples.
++
++The adapter requests web search explicitly, caps output at 2,048 tokens, times out at 60 seconds, and stores the provider response ID. Only HTTP(S) citation URLs without credentials are accepted. No automatic retry is performed. API costs include model usage and search tool usage; there is no account-level currency budget in this version. Configure provider-side spend limits and start with one question.
++
++## Failure handling and limitations
++
++- **Setup required:** add a server key and restart; entering a key in `.env` does not update an already-running process.
++- **Rejected key:** replace the key on the server and restart.
++- **Quota/rate limit:** check your provider account and usage before trying again.
++- **Rejected request:** verify `GEO_OPENAI_MODEL` supports Responses API web search.
++- **Connection timeout:** no observation is saved, but the upstream request may still be billable. Check provider usage before retrying.
++- **Saved but refresh failed:** reload the page. The observation is already stored; do not rerun solely to refresh it.
++
++At most two requests run concurrently per server process. Requests use a client-generated UUID; completed request replays return the saved observation without another provider call. The browser retains the ID while the same attempt is unresolved, but a reload loses it. Crash/timeout recovery across replicas requires a durable queue, leases and reconciliation; this release is a single-process local/VM increment, not a scheduled multi-provider campaign system.
++
++## Adding another provider
++
++Implement `AIProvider.observe(prompt, market)` in a separate adapter. Return normalized answer/citation/model/time evidence. Register the adapter and its public `ProviderInfo` in `src/server/node-server.ts`. Keep all credentials and transport parsing inside the server adapter. The application runner, scoring and SQLite storage need no vendor-specific branch.
++
++Official integration reference: https://developers.openai.com/api/docs/guides/tools-web-search
+diff --git a/docs/SETUP.md b/docs/SETUP.md
+index be4c889..199bb24 100644
+--- a/docs/SETUP.md
++++ b/docs/SETUP.md
+@@ -2,7 +2,7 @@
+ 
+ ## 1. What you are downloading
+ 
+-`GEO_Workbench_Complete_Source.zip` contains one top-level `geo-workbench/` folder, application source, dependency lockfile, Docker deployment files, tests and these instructions. No database, installed dependencies, personal credentials or build output is included.
++`GEO_Workbench_Complete_Source.zip` contains one top-level `geo-workbench-v0.2.1/` folder, application source, dependency lockfile, Docker deployment files, tests and these instructions. No database, installed dependencies, personal credentials or build output is included.
+ 
+ Default runtime: React + Vite frontend, Node 24 HTTP API, SQLite repository. Business logic and contracts are shared with the first hosted version. A complete original Sites source snapshot is included under `reference/`; it does not require restoring anything for the standalone setup.
+ 
+@@ -23,12 +23,12 @@ npm --version
+ 
+ `node --version` must show v24.x. Add the PATH export line to your shell configuration if Node 24 is not selected in new Terminal windows. `.nvmrc` is included for users who already use nvm: run `nvm install` and `nvm use` inside the project instead.
+ 
+-Extract the download, then enter its `geo-workbench` folder. For a ZIP in Downloads:
++Extract the download, then enter its `geo-workbench-v0.2.1` folder. For a ZIP in Downloads:
+ 
+ ```sh
+ cd ~/Downloads
+ unzip GEO_Workbench_Complete_Source.zip
+-cd geo-workbench
++cd geo-workbench-v0.2.1
+ cp .env.example .env
+ npm ci
+ npm run dev
+@@ -36,7 +36,7 @@ npm run dev
+ 
+ Open http://localhost:5173. The API listens on 127.0.0.1:8080. Both processes stop with Control-C. If these ports are in use, stop the other application; the provided dev proxy assumes API port 8080.
+ 
+-Create a client, import page HTML and inspect findings. Local authentication uses `local-admin`, binds to loopback and requires no password. Imported content is never executed or published. You do not need an OpenAI key for the current feature set.
++Create a client, import page HTML and inspect findings. Local authentication uses `local-admin`, binds to loopback and requires no password. Imported content is never executed or published. HTML audits and manual imports work without a provider key. Automatic observations require a server-side OPENAI_API_KEY; see OBSERVATIONS.md.
+ 
+ Frontend edits reload automatically. Stop and rerun `npm run dev` after editing `src/core`, `src/application`, validation or the Node server, because the dev server compiles these modules at startup.
+ 
+@@ -50,7 +50,7 @@ npm test
+ npm start
+ ```
+ 
+-Open http://localhost:8080. `npm test` performs a build and runs 16 checks. You can also use `npm run build` when building without tests.
++Open http://localhost:8080. `npm test` performs a build and runs 28 checks. You can also use `npm run build` when building without tests.
+ 
+ ### Local data
+ 
+@@ -181,11 +181,11 @@ Use a unique backup filename each time and store backups outside the VM too. Sto
+ 
+ ## 7. What is verified and what remains
+ 
+-Verified in Linux with Node 24: type checks, frontend/server build, 12 domain/application tests and 4 portable integration tests. HTTP tests cover creating clients, saving audits and observations, Basic authentication, spoofed identity-header rejection, origin checks, SQLite persistence and failed-batch rollback.
++Verified in Linux with Node 24: type checks, frontend/server build, 12 domain/application tests, 4 portable integration tests, 6 provider/collection tests and 6 identity tests. HTTP tests cover creating clients, saving audits and observations, Basic authentication, spoofed identity-header rejection, origin checks, SQLite persistence and failed-batch rollback.
+ 
+ The Mac commands use the same Node/Vite code paths, but were not executed on an actual Mac. Docker is unavailable in the build environment, so the image/Compose/HTTPS deployment has not been executed. The package includes a normal npm lockfile using public npm registry URLs; clean downloading of dependencies requires Internet access.
+ 
+-The first-stage product does not yet automate crawling or engine calls. Prompt generation and import-based audits/observations are working. Provider secrets, organization identity, CMS connectors, multi-instance storage and production telemetry are the next increments.
++This edition automates one OpenAI web-search observation per request. Add OPENAI_API_KEY to the server .env and restart; see OBSERVATIONS.md. Prompt generation and import-based audits/observations remain available without a key. Crawling, queued campaigns, additional providers, organization identity, CMS connectors, multi-instance storage and production telemetry are future increments.
+ 
+ ## Official setup references
+ 
+diff --git a/docs/VALIDATION.md b/docs/VALIDATION.md
+index 6f825c5..0a8a714 100644
+--- a/docs/VALIDATION.md
++++ b/docs/VALIDATION.md
+@@ -1,6 +1,7 @@
+ # Portable edition validation — October 5, 2026
+ 
+ - 12 domain/application tests pass.
++- 6 provider/collection tests pass using injected HTTP fixtures and temporary SQLite databases.
+ - 4 standalone HTTP/storage/authentication integration tests pass.
+ - Strict client/server TypeScript checks pass.
+ - Portable React/Vite and Node server builds pass.
+@@ -8,3 +9,7 @@
+ - Original hosted source and its original validation notes remain in `reference/GEO_Workbench_Sites_Source.tar.gz`.
+ 
+ Testing ran on Linux with Node v24.19.0. Mac execution and Docker/Compose deployment were not tested in this environment. No browser visual verification is claimed. The supplied cloud configuration requires a hostname, valid DNS, inbound 80/443 and an edited `.env` before it can issue HTTPS and run.
++
++The new provider flow verifies citation extraction, rejected credentials/quota failures, incomplete responses, missing web search, unsafe citation rejection, no fabricated observations, owner checks, concurrent request limits, completed-request replay, and HTTP origin/input validation. Live OpenAI calls were not tested because no API key was supplied. No credentials were requested in chat.
++
++Six additional identity tests pass (28 total). They cover canonical and alias matching, whitespace and Unicode boundaries, literal regex characters, hidden HTML exclusion, owner-scoped atomic edits, deduplication, preservation of observations/old audit snapshots, persisted identities across SQLite connections, HTTP validation/origin rejection, and updated mention rates without changing citation rates.
+diff --git a/docs/openapi.json b/docs/openapi.json
+index 70340ca..a7d2d91 100644
+--- a/docs/openapi.json
++++ b/docs/openapi.json
+@@ -2,7 +2,7 @@
+   "openapi": "3.1.0",
+   "info": {
+     "title": "GEO Workbench API",
+-    "version": "0.1.1",
++    "version": "0.2.1",
+     "description": "Standalone edition: loopback-only local owner identity or HTTP Basic authentication over HTTPS. Same-origin browser writes required. Original Sites adapter uses trusted platform identity."
+   },
+   "paths": {
+@@ -188,6 +188,158 @@
+           }
+         }
+       }
++    },
++    "/api/v1/providers": {
++      "get": {
++        "summary": "List public provider configuration (never API keys)",
++        "responses": {
++          "200": {
++            "description": "ProviderInfo[] with id, label, model, configured"
++          },
++          "401": {
++            "description": "Sign in required"
++          }
++        }
++      }
++    },
++    "/api/v1/clients/{id}/observation-runs": {
++      "parameters": [
++        {
++          "name": "id",
++          "in": "path",
++          "required": true,
++          "schema": {
++            "type": "string"
++          }
++        }
++      ],
++      "post": {
++        "summary": "Run one paid web-search observation; replay completed requests using the same requestId",
++        "requestBody": {
++          "required": true,
++          "content": {
++            "application/json": {
++              "schema": {
++                "type": "object",
++                "additionalProperties": false,
++                "required": [
++                  "provider",
++                  "prompt",
++                  "requestId"
++                ],
++                "properties": {
++                  "provider": {
++                    "type": "string",
++                    "minLength": 1,
++                    "maxLength": 60
++                  },
++                  "prompt": {
++                    "type": "string",
++                    "minLength": 5,
++                    "maxLength": 2000
++                  },
++                  "requestId": {
++                    "type": "string",
++                    "format": "uuid"
++                  }
++                }
++              }
++            }
++          }
++        },
++        "responses": {
++          "200": {
++            "description": "Saved Observation, source ai-provider; optional annotations and providerResponseId"
++          },
++          "400": {
++            "description": "Invalid input"
++          },
++          "401": {
++            "description": "Sign in required"
++          },
++          "403": {
++            "description": "Origin denied"
++          },
++          "404": {
++            "description": "Client not found"
++          },
++          "409": {
++            "description": "Request ID conflict or already running"
++          },
++          "429": {
++            "description": "Concurrency or provider quota limit"
++          },
++          "502": {
++            "description": "Provider failed; no observation saved"
++          },
++          "503": {
++            "description": "Provider not configured"
++          }
++        }
++      }
++    },
++    "/api/v1/clients/{id}/identity": {
++      "parameters": [
++        {
++          "name": "id",
++          "in": "path",
++          "required": true,
++          "schema": {
++            "type": "string"
++          }
++        }
++      ],
++      "post": {
++        "summary": "Update public brand name and explicit aliases while preserving the client and evidence",
++        "requestBody": {
++          "required": true,
++          "content": {
++            "application/json": {
++              "schema": {
++                "type": "object",
++                "additionalProperties": false,
++                "required": [
++                  "name",
++                  "brandAliases"
++                ],
++                "properties": {
++                  "name": {
++                    "type": "string",
++                    "minLength": 2,
++                    "maxLength": 100
++                  },
++                  "brandAliases": {
++                    "type": "array",
++                    "maxItems": 10,
++                    "items": {
++                      "type": "string",
++                      "minLength": 2,
++                      "maxLength": 100
++                    }
++                  }
++                }
++              }
++            }
++          }
++        },
++        "responses": {
++          "200": {
++            "description": "Updated Client"
++          },
++          "400": {
++            "description": "Invalid input"
++          },
++          "401": {
++            "description": "Sign in required"
++          },
++          "403": {
++            "description": "Origin denied"
++          },
++          "404": {
++            "description": "Client not found"
++          }
++        }
++      }
+     }
+   },
+   "components": {
+diff --git a/package-lock.json b/package-lock.json
+index 37869e9..b09d32c 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -1,12 +1,12 @@
+ {
+   "name": "geo-workbench",
+-  "version": "0.1.1",
++  "version": "0.2.1",
+   "lockfileVersion": 3,
+   "requires": true,
+   "packages": {
+     "": {
+       "name": "geo-workbench",
+-      "version": "0.1.1",
++      "version": "0.2.1",
+       "dependencies": {
+         "lucide-react": "1.31.0",
+         "react": "19.2.6",
+diff --git a/package.json b/package.json
+index 89f4265..14d469a 100644
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "geo-workbench",
+-  "version": "0.1.1",
++  "version": "0.2.1",
+   "private": true,
+   "type": "module",
+   "engines": {
+@@ -10,7 +10,7 @@
+     "dev": "node --env-file-if-exists=.env scripts/dev.mjs",
+     "build": "node scripts/build-portable.mjs",
+     "start": "node --env-file-if-exists=.env dist/server/server/node-server.js",
+-    "test": "node scripts/build-portable.mjs && node --test tests/core.test.mjs tests/portable.test.mjs",
++    "test": "node scripts/build-portable.mjs && node --test tests/core.test.mjs tests/portable.test.mjs tests/observations.test.mjs tests/identity.test.mjs",
+     "typecheck": "tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.server.json --noEmit"
+   },
+   "dependencies": {
+diff --git a/src/adapters/validation.ts b/src/adapters/validation.ts
+index c4e5999..2aa76e6 100644
+--- a/src/adapters/validation.ts
++++ b/src/adapters/validation.ts
+@@ -3,3 +3,5 @@ export const urlSchema = z.string().url().max(2048).refine(s => { const u = new
+ export const clientSchema = z.object({ name: z.string().trim().min(2).max(100), domain: urlSchema, industry: z.string().trim().min(2).max(120), market: z.string().trim().min(2).max(100), products: z.array(z.string().trim().min(1).max(120)).max(10), competitors: z.array(z.string().trim().min(1).max(100)).max(5) }).strict();
+ export const auditSchema = z.object({ url: urlSchema, html: z.string().min(20).max(250000) }).strict();
+ export const observationSchema = z.array(z.object({ engine: z.string().trim().min(1).max(60), surface: z.string().trim().min(1).max(100), model: z.string().trim().min(1).max(100), prompt: z.string().trim().min(5).max(2000), response: z.string().trim().min(1).max(12000), citations: z.array(urlSchema).max(30), observedAt: z.string().datetime().refine(s => new Date(s).getTime() <= Date.now(), 'Observation date cannot be in the future') }).strict()).min(1).max(20);
++
++export const identitySchema = z.object({name: z.string().trim().min(2).max(100), brandAliases: z.array(z.string().trim().min(2).max(100)).max(10)}).strict();
+diff --git a/src/application/client-identity.ts b/src/application/client-identity.ts
+new file mode 100644
+index 0000000..db6f840
+--- /dev/null
++++ b/src/application/client-identity.ts
+@@ -0,0 +1,18 @@
++import type {ClientIdentity, ClientIdentityStore, Repository} from '../core/contracts';
++
++export class ClientIdentityService {
++    constructor(private repo: Repository & ClientIdentityStore) {}
++    async update(owner: string, clientId: string, input: ClientIdentity) {
++        if (!await this.repo.getClient(owner, clientId)) throw new Error('Client not found');
++        const name = input.name.trim();
++        const seen = new Set([name.toLocaleLowerCase('en-US')]);
++        const brandAliases = input.brandAliases.map(s => s.trim()).filter(s => {
++            const key = s.toLocaleLowerCase('en-US');
++            if (!s || seen.has(key)) return false;
++            seen.add(key); return true;
++        });
++        const saved = await this.repo.updateIdentity(owner, clientId, {name, brandAliases}, new Date().toISOString());
++        if (!saved) throw new Error('Client not found');
++        return saved;
++    }
++}
+diff --git a/src/application/observation-runner.ts b/src/application/observation-runner.ts
+new file mode 100644
+index 0000000..ced6ca8
+--- /dev/null
++++ b/src/application/observation-runner.ts
+@@ -0,0 +1,31 @@
++import type {AIProvider, Observation, ObservationLookup, Repository} from '../core/contracts';
++import {CollectionError} from '../core/contracts';
++
++/** One query per request. Queued campaigns can call this same provider port later. */
++export class ObservationRunner {
++    private active = new Set<string>();
++    constructor(private repo: Repository & ObservationLookup, private providers: Map<string, AIProvider>) {}
++
++    async run(owner: string, clientId: string, providerId: string, prompt: string, requestId: string) {
++        const client = await this.repo.getClient(owner, clientId);
++        if (!client) throw new Error('Client not found');
++        const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify([owner, clientId, requestId])));
++        const id = Array.from(new Uint8Array(bytes), b => b.toString(16).padStart(2, '0')).join('');
++        const saved = await this.repo.findObservation(owner, clientId, id);
++        if (saved) {
++            if (saved.prompt !== prompt || saved.engine !== providerId) throw new CollectionError('Request ID was already used for another query.', 409);
++            return saved;
++        }
++        const provider = this.providers.get(providerId);
++        if (!provider) throw new CollectionError('Provider is not configured. Add OPENAI_API_KEY to your server .env file and restart.', 503);
++        if (this.active.has(id)) throw new CollectionError('This query is already running. Wait for its result.', 409);
++        if (this.active.size >= 2) throw new CollectionError('Two queries are already running. Try again after one finishes.', 429);
++        this.active.add(id);
++        try {
++            const evidence = await provider.observe(prompt, client.market);
++            const observation: Observation = {...evidence, id, clientId, created: new Date().toISOString(), source: 'ai-provider'};
++            await this.repo.saveRecords(owner, clientId, 'observation', [observation]);
++            return observation;
++        } finally { this.active.delete(id); }
++    }
++}
+diff --git a/src/core/brand-matching.ts b/src/core/brand-matching.ts
+new file mode 100644
+index 0000000..5bf6dfd
+--- /dev/null
++++ b/src/core/brand-matching.ts
+@@ -0,0 +1,10 @@
++import type {Client} from './contracts';
++
++/** Explicit identity variants only; do not guess aliases or strip all spaces. */
++export function mentionsBrand(client: Client, text: string): boolean {
++    const variants = [client.name, ...client.brandAliases || []].map(v => v.trim()).filter(Boolean);
++    return variants.some(v => {
++        const escaped = v.split(/\s+/).map(token => token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s+');
++        return new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}($|[^\\p{L}\\p{N}])`, 'iu').test(text);
++    });
++}
+diff --git a/src/core/contracts.ts b/src/core/contracts.ts
+index cb2060c..ab1b441 100644
+--- a/src/core/contracts.ts
++++ b/src/core/contracts.ts
+@@ -1,6 +1,8 @@
+ export type Client = {
+     id: string;
+     name: string;
++    brandAliases?: string[];
++    updated?: string;
+     domain: string;
+     industry: string;
+     products: string[];
+@@ -39,7 +41,9 @@ export type Observation = {
+     citations: string[];
+     observedAt: string;
+     created: string;
+-    source: 'manual-import';
++    source: 'manual-import' | 'ai-provider';
++    providerResponseId?: string;
++    annotations?: {url: string; startIndex: number; endIndex: number}[];
+ };
+ export interface Repository {
+     listClients(owner: string): Promise<Client[]>;
+@@ -83,3 +87,17 @@ export interface JobQueue {
+         payload: unknown;
+     }): Promise<void>;
+ }
++
++/** Exact lookup supports replaying a completed request without another paid call. */
++export interface ObservationLookup {
++    findObservation(owner: string, clientId: string, id: string): Promise<Observation | null>;
++}
++export type ProviderInfo = {id: string; label: string; model: string; configured: boolean};
++export class CollectionError extends Error {
++    constructor(message: string, readonly status = 502) { super(message); }
++}
++
++export type ClientIdentity = {name: string; brandAliases: string[]};
++export interface ClientIdentityStore {
++    updateIdentity(owner: string, clientId: string, identity: ClientIdentity, updatedAt: string): Promise<Client | null>;
++}
+diff --git a/src/core/scoring.ts b/src/core/scoring.ts
+index 11faee0..82be733 100644
+--- a/src/core/scoring.ts
++++ b/src/core/scoring.ts
+@@ -1,5 +1,6 @@
+ import type { Client, Dimension, Observation } from './contracts';
+-export const RUBRIC_VERSION = 'readiness-cues/1.0.0';
++import {mentionsBrand} from './brand-matching';
++export const RUBRIC_VERSION = 'readiness-cues/1.1.0';
+ export function aggregate(dimensions: Dimension[]) { const known = dimensions.filter(d => d.score !== null); const coverage = known.reduce((n, d) => n + d.weight, 0); return { score: coverage ? Math.round(known.reduce((n, d) => n + d.weight * d.score!, 0) / coverage) : 0, coverage }; }
+ export function analyzeHtml(html: string, c: Client): Dimension[] {
+     const clean = html.replace(/<!--[\s\S]*?-->/g, '');
+@@ -34,7 +35,7 @@ export function analyzeHtml(html: string, c: Client): Dimension[] {
+     return [
+         d('crawl', 'Crawler access', 15, null, 'Imported HTML cannot establish robots rules, WAF access, or indexing.', 'Capture robots.txt, response headers, and crawler access evidence.'),
+         d('technical', 'Page structure', 10, noindex ? 0 : 25 * [title, h1, desc, canonical].filter(Boolean).length, `Title ${title ? 'present' : 'missing'}; H1 ${h1 ? 'present' : 'missing'}; description ${desc ? 'present' : 'missing'}; canonical ${canonical ? 'present' : 'missing'}; noindex ${noindex ? 'detected' : 'not detected in HTML'}.`, 'Review title, H1, description, canonical and intended indexing policy.'),
+-        d('entity', 'Brand clarity', 15, visible.toLowerCase().includes(c.name.toLowerCase()) ? 100 : 0, `Brand name ${visible.toLowerCase().includes(c.name.toLowerCase()) ? 'found' : 'not found'} in extracted text. This does not validate entity authority.`, 'Identify the brand and explain its products in visible content.'),
++        d('entity', 'Brand clarity', 15, mentionsBrand(c, visible) ? 100 : 0, `Configured brand name or alias ${mentionsBrand(c, visible) ? 'found' : 'not found'} in extracted text. This does not validate entity authority.`, 'Identify the brand and explain its products in visible content.'),
+         d('content', 'Answer structure', 20, 25 * [h1, /<h2\b/i.test(clean), words >= 150, /<(ul|ol|table)\b/i.test(clean)].filter(Boolean).length, `${words} extracted words; heading and list/table cues assessed. Answer accuracy and usefulness need human review.`, 'Use descriptive headings and clear, factual answers; add lists or tables where useful.'),
+         d('evidence', 'Reference cues', 15, external ? 100 : 0, `${external} external reference link(s). Sources and claims have not been verified.`, 'Support material claims with relevant, verifiable references.'),
+         d('schema', 'Structured data cues', 10, invalid ? 0 : valid ? 100 : 0, `${valid} typed JSON-LD block(s); ${invalid} invalid or untyped block(s). Syntax cues only; no semantic validation.`, 'Consider relevant structured data matching visible content. It is not required for AI visibility.'),
+@@ -44,4 +45,4 @@ export function analyzeHtml(html: string, c: Client): Dimension[] {
+     ];
+ }
+ export function queryUniverse(c: Client) { return (c.products.length ? c.products : [c.industry]).flatMap(p => [{ intent: 'Education', prompt: `What is ${p} and who is it for?` }, { intent: 'Evaluation', prompt: `Which ${p} providers should a business in ${c.market} evaluate?` }, { intent: 'Implementation', prompt: `How can a business implement ${p}?` }, ...c.competitors.map(k => ({ intent: 'Comparison', prompt: `How does ${c.name} compare with ${k} for ${p}?` }))]); }
+-export function visibility(c: Client, rows: Observation[]) { const hostname = new URL(c.domain).hostname.replace(/^www\./, ''); const escaped = c.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); const name = new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}($|[^\\p{L}\\p{N}])`, 'iu'); const mentions = rows.filter(r => name.test(r.response)).length; const citations = rows.filter(r => r.citations.some(u => { const h = new URL(u).hostname.replace(/^www\./, ''); return h === hostname || h.endsWith('.' + hostname); })).length; return { sample: rows.length, mentionRate: rows.length ? Math.round(mentions / rows.length * 100) : null, citationRate: rows.length ? Math.round(citations / rows.length * 100) : null }; }
++export function visibility(c: Client, rows: Observation[]) { const hostname = new URL(c.domain).hostname.replace(/^www\./, ''); const mentions = rows.filter(r => mentionsBrand(c, r.response)).length; const citations = rows.filter(r => r.citations.some(u => { const h = new URL(u).hostname.replace(/^www\./, ''); return h === hostname || h.endsWith('.' + hostname); })).length; return { sample: rows.length, mentionRate: rows.length ? Math.round(mentions / rows.length * 100) : null, citationRate: rows.length ? Math.round(citations / rows.length * 100) : null }; }
+diff --git a/src/server/node-server.ts b/src/server/node-server.ts
+index c1e08bc..a95043a 100644
+--- a/src/server/node-server.ts
++++ b/src/server/node-server.ts
+@@ -6,8 +6,12 @@ import {pathToFileURL} from 'node:url';
+ import {z} from 'zod';
+ import {SqliteRepository} from './sqlite-repository';
+ import {Workbench} from '../application/workbench';
+-import {clientSchema,auditSchema,observationSchema} from '../adapters/validation';
+-export type Settings={mode:'local'|'basic';bind:string;port:number;dataDir:string;origins:string[];username:string;password:string;clientDir:string};
++import {ClientIdentityService} from '../application/client-identity';
++import {ObservationRunner} from '../application/observation-runner';
++import {OpenAIProvider} from './providers/openai-provider';
++import {CollectionError, type AIProvider, type ProviderInfo} from '../core/contracts';
++import {clientSchema,auditSchema,observationSchema,identitySchema} from '../adapters/validation';
++export type Settings={mode:'local'|'basic';bind:string;port:number;dataDir:string;origins:string[];username:string;password:string;clientDir:string;openaiKey?:string;openaiModel?:string};
+ export function settings(e:NodeJS.ProcessEnv=process.env):Settings {
+  const mode=e.GEO_AUTH_MODE||'local';if(mode!=='local'&&mode!=='basic')throw new Error('GEO_AUTH_MODE must be local or basic');
+  const bind=e.GEO_BIND||(mode==='local'?'127.0.0.1':'0.0.0.0');
+@@ -17,13 +21,19 @@ export function settings(e:NodeJS.ProcessEnv=process.env):Settings {
+  if(mode==='basic'&&(!username||username.includes(':')||password.length<16||password.includes('REPLACE_')))throw new Error('Basic authentication requires a username and a unique password of at least 16 characters');
+  const origins=(e.GEO_ALLOWED_ORIGINS||'http://localhost:5173,http://127.0.0.1:5173,http://localhost:8080,http://127.0.0.1:8080').split(',').map(s=>s.trim()).filter(Boolean);
+  for(const o of origins){const u=new URL(o);if(u.origin!==o||!['http:','https:'].includes(u.protocol))throw new Error('Allowed origins must be exact HTTP(S) origins')}
+- return {mode,bind,port,dataDir:resolve(e.GEO_DATA_DIR||'data'),origins,username,password,clientDir:resolve('dist/client')};
++ return {mode,bind,port,dataDir:resolve(e.GEO_DATA_DIR||'data'),origins,username,password,clientDir:resolve('dist/client'),openaiKey:e.OPENAI_API_KEY?.trim()||undefined,openaiModel:e.GEO_OPENAI_MODEL?.trim()||'gpt-4.1'};
+ }
+ function equal(a:string,b:string){return timingSafeEqual(createHash('sha256').update(a).digest(),createHash('sha256').update(b).digest())}
+ function authenticated(req:IncomingMessage,s:Settings){if(s.mode==='local')return true;const a=req.headers.authorization;if(!a||!a.startsWith('Basic '))return false;let decoded:string;try{decoded=Buffer.from(a.slice(6),'base64').toString('utf8')}catch{return false}return equal(decoded,s.username+':'+s.password)}
+ function json(res:ServerResponse,status:number,data:unknown){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(data))}
+ async function body(req:IncomingMessage){const chunks:Buffer[]=[];let bytes=0;for await(const chunk of req){const b=Buffer.from(chunk);bytes+=b.length;if(bytes>600000)throw new Error('Request too large');chunks.push(b)}return JSON.parse(Buffer.concat(chunks).toString('utf8'))}
+-export function createWorkbenchServer(s:Settings){const repo=new SqliteRepository(s.dataDir);const app=new Workbench(repo);
++export function createWorkbenchServer(s:Settings, supplied?:{providers:Map<string,AIProvider>;info:ProviderInfo[]}){const repo=new SqliteRepository(s.dataDir);const app=new Workbench(repo);
++ const providers=supplied?.providers||new Map<string,AIProvider>();
++ if(!supplied&&s.openaiKey)providers.set('openai',new OpenAIProvider(s.openaiKey,s.openaiModel));
++ const info=supplied?.info||[{id:'openai',label:'OpenAI web search',model:s.openaiModel||'gpt-4.1',configured:!!s.openaiKey}];
++ const runner=new ObservationRunner(repo,providers);
++ const identities=new ClientIdentityService(repo);
++ const runSchema=z.object({provider:z.string().min(1).max(60),prompt:z.string().trim().min(5).max(2000),requestId:z.string().uuid()}).strict();
+  const server=createServer(async(req,res)=>{res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','same-origin');res.setHeader('X-Frame-Options','DENY');
+  if(s.mode==='local'){let h='';try{h=new URL('http://'+(req.headers.host||'')).hostname}catch{}if(!['127.0.0.1','localhost','[::1]'].includes(h))return json(res,403,{error:'Host denied'})}
+  if(!authenticated(req,s)){res.setHeader('WWW-Authenticate','Basic realm="GEO Workbench", charset="UTF-8"');return json(res,401,{error:'Sign in required'})}
+@@ -34,6 +44,11 @@ export function createWorkbenchServer(s:Settings){const repo=new SqliteRepositor
+  if(path.startsWith('/api/')){
+  if(!['GET','POST'].includes(req.method||''))return json(res,405,{error:'Method not allowed'});
+  if(req.method==='POST'&&!s.origins.includes(req.headers.origin||''))return json(res,403,{error:'Origin denied'});
++ if(path==='/api/v1/providers')return req.method==='GET'?json(res,200,info):json(res,405,{error:'Method not allowed'});
++ const identityMatch=path.match(/^\/api\/v1\/clients\/([^/]+)\/identity$/);
++ if(identityMatch){if(req.method!=='POST')return json(res,405,{error:'Method not allowed'});const input=identitySchema.parse(await body(req));return json(res,200,await identities.update(owner,decodeURIComponent(identityMatch[1]),input));}
++ const runMatch=path.match(/^\/api\/v1\/clients\/([^/]+)\/observation-runs$/);
++ if(runMatch){if(req.method!=='POST')return json(res,405,{error:'Method not allowed'});const input=runSchema.parse(await body(req));return json(res,200,await runner.run(owner,decodeURIComponent(runMatch[1]),input.provider,input.prompt,input.requestId));}
+  if(path==='/api/v1/clients'){
+  if(req.method==='GET')return json(res,200,await repo.listClients(owner));
+  const data=clientSchema.parse(await body(req));const c={...data,domain:new URL(data.domain).origin,id:crypto.randomUUID(),created:new Date().toISOString()};await repo.saveClient(owner,c);return json(res,200,c)}
+@@ -48,7 +63,7 @@ export function createWorkbenchServer(s:Settings){const repo=new SqliteRepositor
+  if(!existsSync(file))return json(res,503,{error:'Frontend is not built. Run npm run build, or use npm run dev.'});
+  const types:Record<string,string>={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.ico':'image/x-icon','.woff2':'font/woff2'};
+  res.writeHead(200,{'Content-Type':types[extname(file)]||'application/octet-stream','Cache-Control':extname(file)==='.html'?'no-store':'public, max-age=3600'});res.end(req.method==='HEAD'?undefined:readFileSync(file));
+- }catch(e){const message=e instanceof z.ZodError?e.issues[0]?.message:e instanceof SyntaxError?'Invalid JSON':e instanceof Error?e.message:'Request failed';const status=message==='Client not found'?404:e instanceof z.ZodError||e instanceof SyntaxError||message==='Request too large'||message==='Page URL must belong to the client domain'||e instanceof URIError?400:500;if(status===500)console.error('Request failed',e);json(res,status,{error:status===500?'Request failed. Check the server log.':message})}
++ }catch(e){if(e instanceof CollectionError)return json(res,e.status,{error:e.message});const message=e instanceof z.ZodError?e.issues[0]?.message:e instanceof SyntaxError?'Invalid JSON':e instanceof Error?e.message:'Request failed';const status=message==='Client not found'?404:e instanceof z.ZodError||e instanceof SyntaxError||message==='Request too large'||message==='Page URL must belong to the client domain'||e instanceof URIError?400:500;if(status===500)console.error('Request failed',e);json(res,status,{error:status===500?'Request failed. Check the server log.':message})}
+  });server.requestTimeout=30000;server.headersTimeout=15000;return {server,repo};
+ }
+ if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){const s=settings();const {server,repo}=createWorkbenchServer(s);server.listen(s.port,s.bind,()=>console.log(`GEO Workbench API running on ${s.bind}:${s.port} (${s.mode} authentication)`));for(const signal of ['SIGINT','SIGTERM'] as const)process.on(signal,()=>server.close(()=>{repo.close();process.exit(0)}));}
+diff --git a/src/server/providers/openai-provider.ts b/src/server/providers/openai-provider.ts
+new file mode 100644
+index 0000000..4d0df21
+--- /dev/null
++++ b/src/server/providers/openai-provider.ts
+@@ -0,0 +1,63 @@
++import {z} from 'zod';
++import type {AIProvider, Observation} from '../../core/contracts';
++import {CollectionError} from '../../core/contracts';
++
++const payloadSchema = z.object({
++    id: z.string(), model: z.string(), status: z.literal('completed'),
++    output: z.array(z.object({type: z.string(), status: z.string().optional(), content: z.array(z.object({
++        type: z.string(), text: z.string().optional(), annotations: z.array(z.object({
++            type: z.string(), url: z.string().optional(), start_index: z.number().int().nonnegative().optional(), end_index: z.number().int().nonnegative().optional()
++        }).passthrough()).optional()
++    }).passthrough()).optional()}).passthrough())
++}).passthrough();
++function safeUrl(value: string) { try { const u = new URL(value); return ['https:', 'http:'].includes(u.protocol) && !u.username && !u.password; } catch { return false; } }
++
++export class OpenAIProvider implements AIProvider {
++    readonly id = 'openai';
++    constructor(private key: string, readonly model = 'gpt-4.1', private request: typeof fetch = fetch) {}
++    async observe(prompt: string, market: string): Promise<Omit<Observation, 'id'|'clientId'|'created'|'source'>> {
++        let result: Response;
++        try {
++            result = await this.request('https://api.openai.com/v1/responses', {
++                method: 'POST', signal: AbortSignal.timeout(60000),
++                headers: {'Authorization': `Bearer ${this.key}`, 'Content-Type': 'application/json'},
++                body: JSON.stringify({model: this.model, store: false, max_output_tokens: 2048,
++                    tools: [{type: 'web_search'}], tool_choice: 'required',
++                    instructions: `Answer the user's question for the following market: ${market}. Search the web and cite sources.`, input: prompt})
++            });
++        } catch {
++            throw new CollectionError('Provider connection failed or exceeded 60 seconds. No observation was saved. The provider may have charged for this attempt; check usage before retrying.');
++        }
++        if (!result.ok) {
++            const message = result.status === 401 ? 'OpenAI rejected the API key. Check OPENAI_API_KEY on the server.'
++                : result.status === 429 ? 'OpenAI rate or account quota limit reached. Check account usage before retrying.'
++                : result.status === 400 ? 'OpenAI rejected the request. Check GEO_OPENAI_MODEL supports Responses API web search.'
++                : 'OpenAI could not complete the request. No observation was saved.';
++            throw new CollectionError(message, result.status === 429 ? 429 : 502);
++        }
++        let raw: unknown;
++        try { raw = await result.json(); } catch { throw new CollectionError('Provider returned invalid JSON. No observation was saved.'); }
++        const parsed = payloadSchema.safeParse(raw);
++        if (!parsed.success) throw new CollectionError('Provider response was incomplete or invalid. No observation was saved.');
++        const data = parsed.data;
++        if (!data.output.some(o => o.type === 'web_search_call' && o.status === 'completed'))
++            throw new CollectionError('Provider did not complete a web search. No observation was saved.');
++        let response = '';
++        const citations = new Set<string>();
++        const annotations: NonNullable<Observation['annotations']> = [];
++        for (const item of data.output) if (item.type === 'message') for (const part of item.content || []) {
++            if (part.type !== 'output_text' || !part.text) continue;
++            if (response) response += '\n\n';
++            const offset = response.length;
++            response += part.text;
++            for (const a of part.annotations || []) if (a.type === 'url_citation' && a.url && safeUrl(a.url)) {
++                citations.add(a.url);
++                if (a.start_index !== undefined && a.end_index !== undefined && a.end_index > a.start_index && a.end_index <= part.text.length)
++                    annotations.push({url: a.url, startIndex: offset + a.start_index, endIndex: offset + a.end_index});
++            }
++        }
++        if (!response.trim() || response.length > 12000) throw new CollectionError('Provider returned an empty or oversized answer. No observation was saved.');
++        return {engine: this.id, surface: 'Responses API · web search', model: data.model, prompt, response,
++            citations: [...citations], annotations, providerResponseId: data.id, observedAt: new Date().toISOString()};
++    }
++}
+diff --git a/src/server/sqlite-repository.ts b/src/server/sqlite-repository.ts
+index 5d07056..38b4b5b 100644
+--- a/src/server/sqlite-repository.ts
++++ b/src/server/sqlite-repository.ts
+@@ -1,8 +1,8 @@
+ import {DatabaseSync} from 'node:sqlite';
+ import {mkdirSync} from 'node:fs';
+ import {join} from 'node:path';
+-import type {Client,Repository} from '../core/contracts';
+-export class SqliteRepository implements Repository {
++import type {Client,Repository,Observation,ObservationLookup,ClientIdentity,ClientIdentityStore} from '../core/contracts';
++export class SqliteRepository implements Repository,ObservationLookup,ClientIdentityStore {
+  readonly db:DatabaseSync;
+  constructor(dir:string){mkdirSync(dir,{recursive:true});this.db=new DatabaseSync(join(dir,'geo.sqlite'));this.db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;');
+  this.db.exec('CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY NOT NULL)');
+@@ -17,5 +17,10 @@ export class SqliteRepository implements Repository {
+  async saveClient(owner:string,c:Client){this.db.prepare('INSERT INTO clients(id,owner,data,created) VALUES(?,?,?,?)').run(c.id,owner,JSON.stringify(c),c.created)}
+  async listRecords<T>(owner:string,id:string,kind:'audit'|'observation'){return (this.db.prepare('SELECT data FROM records WHERE owner=? AND client_id=? AND kind=? ORDER BY created DESC LIMIT 200').all(owner,id,kind) as {data:string}[]).map(r=>JSON.parse(r.data) as T)}
+  async saveRecords(owner:string,id:string,kind:'audit'|'observation',rows:{id:string;created:string}[]){this.db.exec('BEGIN IMMEDIATE');try{const q=this.db.prepare('INSERT INTO records(id,owner,client_id,kind,data,created) VALUES(?,?,?,?,?,?)');for(const r of rows)q.run(r.id,owner,id,kind,JSON.stringify(r),r.created);this.db.exec('COMMIT')}catch(e){this.db.exec('ROLLBACK');throw e}}
++ async findObservation(owner:string,clientId:string,id:string){const r=this.db.prepare("SELECT data FROM records WHERE owner=? AND client_id=? AND id=? AND kind='observation'").get(owner,clientId,id) as {data:string}|undefined;return r?JSON.parse(r.data) as Observation:null}
++ async updateIdentity(owner:string,clientId:string,identity:ClientIdentity,updatedAt:string){
++ const row=this.db.prepare("UPDATE clients SET data=json_set(data,'$.name',?,'$.brandAliases',json(?),'$.updated',?) WHERE owner=? AND id=? RETURNING data").get(identity.name,JSON.stringify(identity.brandAliases),updatedAt,owner,clientId) as {data:string}|undefined;
++ return row?JSON.parse(row.data) as Client:null;
++ }
+  close(){this.db.close()}
+ }
+diff --git a/tests/core.test.mjs b/tests/core.test.mjs
+index 8a0a825..9ee07ce 100644
+--- a/tests/core.test.mjs
++++ b/tests/core.test.mjs
+@@ -4,7 +4,7 @@ import ts from 'typescript';
+ import {readFileSync,mkdirSync,writeFileSync} from 'node:fs';
+ import {pathToFileURL} from 'node:url';
+ mkdirSync('.sites-runtime/tests/core',{recursive:true});mkdirSync('.sites-runtime/tests/application',{recursive:true});
+-for(const p of ['core/contracts','core/scoring','core/demo','application/workbench']){const source=readFileSync(`src/${p}.ts`,'utf8');let out=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;out=out.replace(/from '(\.\.?\/[^']+)'/g,"from '$1.mjs'");writeFileSync(`.sites-runtime/tests/${p}.mjs`,out)}
++for(const p of ['core/contracts','core/brand-matching','core/scoring','core/demo','application/workbench']){const source=readFileSync(`src/${p}.ts`,'utf8');let out=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;out=out.replace(/from '(\.\.?\/[^']+)'/g,"from '$1.mjs'");writeFileSync(`.sites-runtime/tests/${p}.mjs`,out)}
+ const {analyzeHtml,aggregate,visibility,queryUniverse}=await import(pathToFileURL(process.cwd()+'/.sites-runtime/tests/core/scoring.mjs'));
+ const {sampleClient:c,sampleHtml}=await import(pathToFileURL(process.cwd()+'/.sites-runtime/tests/core/demo.mjs'));
+ const {Workbench}=await import(pathToFileURL(process.cwd()+'/.sites-runtime/tests/application/workbench.mjs'));
+diff --git a/tests/identity.test.mjs b/tests/identity.test.mjs
+new file mode 100644
+index 0000000..0dcd4fe
+--- /dev/null
++++ b/tests/identity.test.mjs
+@@ -0,0 +1,62 @@
++import {test} from 'node:test';
++import assert from 'node:assert/strict';
++import {mkdtempSync,rmSync} from 'node:fs';
++import {tmpdir} from 'node:os';
++import {join} from 'node:path';
++import {once} from 'node:events';
++import {mentionsBrand} from '../dist/server/core/brand-matching.js';
++import {analyzeHtml,visibility,RUBRIC_VERSION} from '../dist/server/core/scoring.js';
++import {ClientIdentityService} from '../dist/server/application/client-identity.js';
++import {Workbench} from '../dist/server/application/workbench.js';
++import {SqliteRepository} from '../dist/server/server/sqlite-repository.js';
++import {settings,createWorkbenchServer} from '../dist/server/server/node-server.js';
++const c={id:'identity-client',name:'WorldFinancialgroup',domain:'https://www.worldfinancialgroup.com',industry:'Insurance',market:'United States',products:['Life insurance'],competitors:['Peer'],created:'2026-10-05T12:00:00Z'};
++const identity={name:'World Financial Group',brandAliases:['WFG','WorldFinancialgroup']};
++const ob={id:'saved-answer',clientId:c.id,created:c.created,source:'manual-import',engine:'fixture',surface:'fixture',model:'fixture',prompt:'Which life insurance providers are available?',response:'World Financial Group (WFG) is an option.',citations:[],observedAt:c.created};
++async function database(run){const dir=mkdtempSync(join(tmpdir(),'geo-identity-'));const repo=new SqliteRepository(dir);try{await repo.saveClient('alice',c);await run(repo,dir)}finally{repo.close();rmSync(dir,{recursive:true,force:true})}}
++
++test('brand identity recognizes canonical names and explicit aliases without substring or regex false positives',()=>{
++ const client={...c,...identity};
++ for(const text of ['world financial group','WORLD\n FINANCIAL\tGROUP','Choose WFG.','WorldFinancialgroup is an option.'])assert.equal(mentionsBrand(client,text),true,text);
++ for(const text of ['WFGrowth','XWFG','World Financial Grouper','No target brand here'])assert.equal(mentionsBrand(client,text),false,text);
++ assert.equal(mentionsBrand({...c,name:'A+B',brandAliases:['X.Y']},'Choose A+B and X.Y.'),true);
++ assert.equal(mentionsBrand({...c,name:'A+B',brandAliases:['X.Y']},'Choose AAAB and XZY.'),false);
++ assert.equal(mentionsBrand(c,'World Financial Group'),false);
++ assert.deepEqual(visibility(client,[{...ob,response:'World Financial Group, WFG, WorldFinancialgroup.'}]),{sample:1,mentionRate:100,citationRate:0});
++});
++
++test('new audit rubric uses visible brand aliases and keeps script/comment evidence excluded',()=>{
++ assert.equal(RUBRIC_VERSION,'readiness-cues/1.1.0');const client={...c,...identity};
++ assert.equal(analyzeHtml('<h1>WFG</h1>',client).find(d=>d.id==='entity').score,100);
++ assert.equal(analyzeHtml('<!--WFG--><script>World Financial Group</script><h1>Other company</h1>',client).find(d=>d.id==='entity').score,0);
++});
++
++test('identity updates preserve client fields, observations and immutable old audits while recalculating mention rates',async()=>database(async repo=>{
++ const app=new Workbench(repo);const oldAudit=await app.audit('alice',c.id,c.domain,'<h1>World Financial Group</h1>');await repo.saveRecords('alice',c.id,'observation',[ob]);
++ assert.equal((await app.detail('alice',c.id)).visibility.mentionRate,0);
++ const service=new ClientIdentityService(repo);const updated=await service.update('alice',c.id,{name:' World Financial Group ',brandAliases:[' WFG ','wfg','world financial group','WorldFinancialgroup']});
++ assert.deepEqual(updated.brandAliases,['WFG','WorldFinancialgroup']);assert.equal(updated.id,c.id);assert.equal(updated.created,c.created);assert.equal(updated.domain,c.domain);assert.deepEqual(updated.products,c.products);assert.deepEqual(updated.competitors,c.competitors);assert.ok(updated.updated);
++ const after=await app.detail('alice',c.id);assert.equal(after.visibility.mentionRate,100);assert.equal(after.visibility.citationRate,0);assert.deepEqual(after.observations,[ob]);assert.deepEqual(after.audits,[oldAudit]);assert.equal(oldAudit.dimensions.find(d=>d.id==='entity').score,0);
++ const next=await app.audit('alice',c.id,c.domain,'<h1>World Financial Group</h1>');assert.equal(next.dimensions.find(d=>d.id==='entity').score,100);assert.equal(next.version,'readiness-cues/1.1.0');
++}));
++
++test('identity edit denies another owner and missing client before mutating stored data',async()=>database(async repo=>{
++ const service=new ClientIdentityService(repo);await assert.rejects(service.update('bob',c.id,identity),/Client not found/);await assert.rejects(service.update('alice','missing',identity),/Client not found/);assert.deepEqual(await repo.getClient('alice',c.id),c);
++ assert.equal(await repo.updateIdentity('bob',c.id,identity,new Date().toISOString()),null);assert.deepEqual(await repo.getClient('alice',c.id),c);
++}));
++
++test('identity changes persist across SQLite reopen',async()=>database(async(repo,dir)=>{
++ await new ClientIdentityService(repo).update('alice',c.id,identity);const second=new SqliteRepository(dir);try{const saved=await second.getClient('alice',c.id);assert.equal(saved.name,identity.name);assert.deepEqual(saved.brandAliases,identity.brandAliases);assert.equal(await second.getClient('bob',c.id),null)}finally{second.close()}
++}));
++
++test('HTTP identity edit validates aliases, blocks other fields and origins, and preserves the existing evidence sample',async()=>{
++ const dir=mkdtempSync(join(tmpdir(),'geo-identity-http-'));const s=settings({GEO_DATA_DIR:dir});const {server,repo}=createWorkbenchServer(s);await repo.saveClient('local-admin',c);await repo.saveClient('other-owner',{...c,id:'other-client'});await repo.saveRecords('local-admin',c.id,'observation',[ob]);server.listen(0,'127.0.0.1');await once(server,'listening');const base='http://127.0.0.1:'+server.address().port;const path='/api/v1/clients/'+c.id+'/identity';
++ const post=(body,origin='http://localhost:5173')=>({method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify(body)});
++ try{
++  assert.equal((await fetch(base+path,post(identity,'https://other.example'))).status,403);
++  for(const bad of [{name:'x',brandAliases:[]},{...identity,brandAliases:Array(11).fill('WFG')},{...identity,domain:'https://other.example'},{...identity,brandAliases:['']}])assert.equal((await fetch(base+path,post(bad))).status,400);
++  assert.equal((await fetch(base+'/api/v1/clients/other-client/identity',post(identity))).status,404);
++  const result=await fetch(base+path,post(identity));assert.equal(result.status,200);assert.equal((await result.json()).id,c.id);
++  const detail=await(await fetch(base+'/api/v1/clients/'+c.id)).json();assert.equal(detail.visibility.sample,1);assert.equal(detail.visibility.mentionRate,100);assert.equal(detail.visibility.citationRate,0);assert.deepEqual(detail.observations,[ob]);
++ }finally{await new Promise(r=>server.close(r));repo.close();rmSync(dir,{recursive:true,force:true})}
++});
+diff --git a/tests/observations.test.mjs b/tests/observations.test.mjs
+new file mode 100644
+index 0000000..9b46e40
+--- /dev/null
++++ b/tests/observations.test.mjs
+@@ -0,0 +1,83 @@
++import {test} from 'node:test';
++import assert from 'node:assert/strict';
++import {mkdtempSync,rmSync} from 'node:fs';
++import {tmpdir} from 'node:os';
++import {join} from 'node:path';
++import {once} from 'node:events';
++import {randomUUID} from 'node:crypto';
++import {OpenAIProvider} from '../dist/server/server/providers/openai-provider.js';
++import {ObservationRunner} from '../dist/server/application/observation-runner.js';
++import {SqliteRepository} from '../dist/server/server/sqlite-repository.js';
++import {settings,createWorkbenchServer} from '../dist/server/server/node-server.js';
++
++const fixture={id:'resp_fixture',model:'fixture-model',status:'completed',output:[{type:'web_search_call',status:'completed'},{type:'message',content:[{type:'output_text',text:'Acme offers a CMS. [1]',annotations:[{type:'url_citation',url:'https://acme.example/cms',start_index:18,end_index:21},{type:'url_citation',url:'javascript:alert(1)',start_index:0,end_index:4}]}]}]};
++const c={id:'client-fixture',name:'Acme',domain:'https://acme.example',industry:'Software',market:'United States',products:['CMS'],competitors:[],created:new Date().toISOString()};
++const evidence={engine:'openai',surface:'Fixture API',model:'fixture',prompt:'Which CMS should we use?',response:'Acme offers a CMS.',citations:['https://acme.example'],observedAt:new Date().toISOString()};
++async function database(run){const dir=mkdtempSync(join(tmpdir(),'geo-observation-'));const repo=new SqliteRepository(dir);try{await repo.saveClient('alice',c);await run(repo)}finally{repo.close();rmSync(dir,{recursive:true,force:true})}}
++
++test('OpenAI adapter sends an unbranded query, requires search, and extracts evidence with safe citations',async()=>{
++ let call;
++ const p=new OpenAIProvider('fixture-secret','gpt-4.1',async(url,init)=>{call={url,init};return Response.json(fixture)});
++ const row=await p.observe(evidence.prompt,c.market);
++ assert.equal(call.url,'https://api.openai.com/v1/responses');assert.equal(call.init.headers.Authorization,'Bearer fixture-secret');
++ const payload=JSON.parse(call.init.body);assert.equal(payload.input,evidence.prompt);assert.equal(payload.store,false);assert.equal(payload.tool_choice,'required');assert.equal(payload.max_output_tokens,2048);assert.match(payload.instructions,/United States/);assert.doesNotMatch(payload.instructions,/Acme/);
++ assert.equal(row.providerResponseId,'resp_fixture');assert.equal(row.model,'fixture-model');assert.equal(row.prompt,evidence.prompt);assert.deepEqual(row.citations,['https://acme.example/cms']);assert.deepEqual(row.annotations,[{url:'https://acme.example/cms',startIndex:18,endIndex:21}]);assert.ok(!JSON.stringify(row).includes('fixture-secret'));
++});
++
++test('provider failures never become a blank or fabricated observation and do not expose upstream payloads',async()=>{
++ const cases=[
++  [async()=>new Response('fixture-secret', {status:401}),/API key/],
++  [async()=>new Response('private upstream details', {status:429}),/quota/],
++  [async()=>new Response('private upstream details', {status:400}),/model|MODEL/],
++  [async()=>{throw new Error('fixture-secret')},/connection/],
++  [async()=>new Response('invalid JSON'),/invalid JSON/],
++  [async()=>Response.json({...fixture,status:'incomplete'}),/incomplete/],
++  [async()=>Response.json({...fixture,output:fixture.output.slice(1)}),/web search/],
++  [async()=>Response.json({...fixture,output:[fixture.output[0]]}),/empty/]
++ ];
++ for(const [request,match] of cases){const p=new OpenAIProvider('fixture-secret','fixture-model',request);await assert.rejects(p.observe(evidence.prompt,c.market),e=>{assert.match(e.message,match);assert.doesNotMatch(e.message,/fixture-secret|private upstream/);return true})}
++});
++
++test('collection is owner-scoped, persists API evidence, and replays completed requests without paying again',async()=>database(async repo=>{
++ let calls=0;const p={id:'openai',observe:async(prompt)=>{calls++;return {...evidence,prompt}}};const runner=new ObservationRunner(repo,new Map([['openai',p]]));const requestId=randomUUID();
++ await assert.rejects(runner.run('bob',c.id,'openai',evidence.prompt,requestId),/Client not found/);assert.equal(calls,0);
++ const first=await runner.run('alice',c.id,'openai',evidence.prompt,requestId);assert.equal(first.source,'ai-provider');assert.equal((await repo.listRecords('alice',c.id,'observation')).length,1);
++ const replay=await runner.run('alice',c.id,'openai',evidence.prompt,requestId);assert.equal(replay.id,first.id);assert.equal(calls,1);
++ await assert.rejects(runner.run('alice',c.id,'openai','A different question?',requestId),/already used/);assert.equal(calls,1);
++ assert.equal(await repo.findObservation('bob',c.id,first.id),null);
++}));
++
++test('missing provider and failed collection leave the evidence and visibility sample empty',async()=>database(async repo=>{
++ const missing=new ObservationRunner(repo,new Map());await assert.rejects(missing.run('alice',c.id,'openai',evidence.prompt,randomUUID()),/not configured/);
++ const failure=new ObservationRunner(repo,new Map([['openai',{id:'openai',observe:async()=>{throw new Error('provider failed')}}]]));await assert.rejects(failure.run('alice',c.id,'openai',evidence.prompt,randomUUID()),/provider failed/);assert.equal((await repo.listRecords('alice',c.id,'observation')).length,0);
++}));
++
++test('simultaneous duplicate and capacity requests cannot trigger extra provider calls',async()=>database(async repo=>{
++ const release=[];let calls=0;const runner=new ObservationRunner(repo,new Map([['openai',{id:'openai',observe:()=>{calls++;return new Promise(resolve=>release.push(()=>resolve(evidence)))}}]]));const firstId=randomUUID();
++ const first=runner.run('alice',c.id,'openai',evidence.prompt,firstId);await new Promise(r=>setImmediate(r));
++ await assert.rejects(runner.run('alice',c.id,'openai',evidence.prompt,firstId),/already running/);
++ const second=runner.run('alice',c.id,'openai',evidence.prompt,randomUUID());await new Promise(r=>setImmediate(r));
++ await assert.rejects(runner.run('alice',c.id,'openai',evidence.prompt,randomUUID()),/Two queries/);assert.equal(calls,2);
++ release.forEach(r=>r());await Promise.all([first,second]);
++ assert.equal((await repo.listRecords('alice',c.id,'observation')).length,2);
++}));
++
++test('HTTP provider discovery excludes secrets; run route enforces origin, input and client ownership',async()=>{
++ const dir=mkdtempSync(join(tmpdir(),'geo-run-http-'));
++ const s=settings({GEO_DATA_DIR:dir,OPENAI_API_KEY:'fixture-secret'});
++ let calls=0;const p={id:'openai',observe:async(prompt)=>{calls++;return {...evidence,prompt}}};
++ const {server,repo}=createWorkbenchServer(s,{providers:new Map([['openai',p]]),info:[{id:'openai',label:'Fixture provider',model:'fixture',configured:true}]});
++ await repo.saveClient('local-admin',c);server.listen(0,'127.0.0.1');await once(server,'listening');const base='http://127.0.0.1:'+server.address().port;
++ const data={provider:'openai',prompt:evidence.prompt,requestId:randomUUID()};const options=(input,origin='http://localhost:5173')=>({method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify(input)});
++ try {
++  const info=await (await fetch(base+'/api/v1/providers')).text();assert.doesNotMatch(info,/fixture-secret/);assert.match(info,/configured/);
++  const path='/api/v1/clients/'+c.id+'/observation-runs';
++  assert.equal((await fetch(base+path,options(data,'https://attacker.example'))).status,403);
++  assert.equal((await fetch(base+path,options({...data,requestId:'bad'}))).status,400);
++  assert.equal((await fetch(base+'/api/v1/clients/missing/observation-runs',options(data))).status,404);assert.equal(calls,0);
++  const run=await fetch(base+path,options(data));assert.equal(run.status,200);assert.equal((await run.json()).source,'ai-provider');
++  assert.equal((await fetch(base+path,options(data))).status,200);assert.equal(calls,1);
++  const detail=await (await fetch(base+'/api/v1/clients/'+c.id)).json();assert.deepEqual(detail.visibility,{sample:1,mentionRate:100,citationRate:100});
++  assert.equal((await fetch(base+path,options({...data,requestId:randomUUID(),provider:'missing'}))).status,503);
++ }finally{await new Promise(r=>server.close(r));repo.close();rmSync(dir,{recursive:true,force:true})}
++});

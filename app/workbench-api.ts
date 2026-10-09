@@ -1,0 +1,2 @@
+export async function api<T=unknown>(path:string,body?:unknown):Promise<T>{const r=await fetch('/api/v1/'+path,{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json'}:undefined,body:body?JSON.stringify(body):undefined});const d=await r.json() as T & {error?:string};if(!r.ok)throw new Error(d.error||'Request failed');return d}
+export async function del<T=unknown>(path:string):Promise<T>{const r=await fetch('/api/v1/'+path,{method:'DELETE'});const d=await r.json() as T & {error?:string};if(!r.ok)throw new Error(d.error||'Request failed');return d}

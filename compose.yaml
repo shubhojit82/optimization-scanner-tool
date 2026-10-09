@@ -1,0 +1,32 @@
+services:
+  app:
+    build: .
+    env_file: .env
+    environment:
+      GEO_AUTH_MODE: basic
+      GEO_BIND: 0.0.0.0
+      GEO_DATA_DIR: /app/data
+      PORT: 8080
+    expose:
+      - "8080"
+    volumes:
+      - geo_data:/app/data
+    restart: unless-stopped
+  proxy:
+    image: caddy:2
+    environment:
+      GEO_PUBLIC_HOST: ${GEO_PUBLIC_HOST:?Set GEO_PUBLIC_HOST in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+    restart: unless-stopped
+volumes:
+  geo_data:
+  caddy_data:
+  caddy_config:

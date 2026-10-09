@@ -1,0 +1,610 @@
+diff --git a/README.md b/README.md
+index 9489a99..0644e76 100644
+--- a/README.md
++++ b/README.md
+@@ -1,10 +1,14 @@
+-# GEO Workbench — standalone source v0.2.0
++# GEO Workbench — standalone source v0.2.1
+ 
+ Complete first-stage GEO product source with a standalone Mac/Linux runtime. Start with [docs/SETUP.md](docs/SETUP.md), which includes local setup, cloud deployment and Git workflows.
+ 
+ ## Updating your existing local installation
+ 
+-Read [UPGRADE.md](UPGRADE.md). The included Git patch upgrades v0.1.1 while preserving `data/` and `.env`.
++Read [UPGRADE.md](UPGRADE.md). The included Git patch upgrades v0.1.1 or v0.2.0 while preserving `data/` and `.env`.
++
++## Correcting an existing client identity
++
++Use **Edit client** next to the selected client. For this WFG workspace, use `World Financial Group` as the name and `WFG, WorldFinancialgroup` as explicit aliases. The update preserves the client ID, records and website. Saved observation rates recalculate using the new identity; historical audits retain their previous scores. Reimport page HTML to create a new audit under rubric `readiness-cues/1.1.0`.
+ 
+ ## Automatic observations
+ 
+@@ -15,7 +19,7 @@ Add `OPENAI_API_KEY` to your existing `.env`, keep `GEO_OPENAI_MODEL=gpt-4.1`, a
+ Requires Node 24 and npm. After extracting the ZIP:
+ 
+ ```sh
+-cd geo-workbench-v0.2.0
++cd geo-workbench-v0.2.1
+ cp .env.example .env
+ npm ci
+ npm run dev
+@@ -31,7 +35,7 @@ npm test
+ npm start
+ ```
+ 
+-`npm test` builds both server and client before running 22 regression/integration tests. Open http://localhost:8080 for the built app. Do not run the dev and built server simultaneously on port 8080.
++`npm test` builds both server and client before running 28 regression/integration tests. Open http://localhost:8080 for the built app. Do not run the dev and built server simultaneously on port 8080.
+ 
+ ## Source boundaries
+ 
+diff --git a/UPGRADE.md b/UPGRADE.md
+index bea5c0d..d1dcec6 100644
+--- a/UPGRADE.md
++++ b/UPGRADE.md
+@@ -1,6 +1,11 @@
+-# Update v0.1.1 to v0.2.0 on your Mac
++# Update v0.1.1 or v0.2.0 to v0.2.1 on your Mac
+ 
+-This download contains the complete source and `updates/v0.1.1-to-v0.2.0.patch`. Apply the patch to your existing installation to retain your clients and audits.
++This download contains the complete source and two upgrade patches. Check the version in your existing `package.json`:
++
++- From **v0.2.0**, use `updates/v0.2.0-to-v0.2.1.patch`.
++- From **v0.1.1**, use `updates/v0.1.1-to-v0.2.1.patch`.
++
++Apply the matching patch to your existing installation to retain your clients and audits. The example commands below show the v0.2.0 upgrade.
+ 
+ 1. Stop your app with Control-C.
+ 2. Extract this release into a **separate** folder. Do not replace your old project with an empty fresh installation.
+@@ -8,18 +13,23 @@ This download contains the complete source and `updates/v0.1.1-to-v0.2.0.patch`.
+ 4. Replace the placeholder patch path below with its actual extracted location:
+ 
+    ```sh
+-   git apply --check /absolute/path/geo-workbench-v0.2.0/updates/v0.1.1-to-v0.2.0.patch
+-   git apply /absolute/path/geo-workbench-v0.2.0/updates/v0.1.1-to-v0.2.0.patch
++   git apply --check /absolute/path/geo-workbench-v0.2.1/updates/v0.2.0-to-v0.2.1.patch
++   git apply /absolute/path/geo-workbench-v0.2.1/updates/v0.2.0-to-v0.2.1.patch
+    npm ci
+    npm run typecheck
+    npm test
+    ```
+ 
+-   `git apply` works even if you have not initialized a repository. If the check reports a conflict, stop before applying and merge that file against the full source in this release. The patch expects the original v0.1.1 source; it does not overwrite `data/` or `.env`.
++   `git apply` works even if you have not initialized a repository. If the check reports a conflict, stop before applying and merge that file against the full source in this release. Each patch expects the original source for its starting version; it does not overwrite `data/` or `.env`.
+ 5. Add `OPENAI_API_KEY=your_api_key` and `GEO_OPENAI_MODEL=gpt-4.1` to your **existing** `.env`. Never commit that file.
+-6. Run `npm run dev`, reload http://localhost:5173, select your client, then open **Observations → Run query & save**. A completed observation updates the visibility sample.
++6. Run `npm run dev`, reload http://localhost:5173 and select your existing client. Click **Edit client**. For WFG, enter:
++
++   - Brand name: `World Financial Group`
++   - Brand aliases: `WFG, WorldFinancialgroup`
++
++   Save. Existing answers are re-evaluated; their text and timestamps stay unchanged. The old audit is preserved. Reimport page HTML if you want a fresh brand-cue assessment, then review your existing observations before running more questions.
+ 
+-For a new installation, enter the extracted `geo-workbench-v0.2.0` folder, run `cp .env.example .env`, then `npm ci` and `npm run dev`. This creates a new empty database. Existing installations should use the patch above.
++For a new installation, enter the extracted `geo-workbench-v0.2.1` folder, run `cp .env.example .env`, then `npm ci` and `npm run dev`. This creates a new empty database. Existing installations should use the patch above.
+ 
+ ## Commit and deploy your change
+ 
+@@ -27,7 +37,7 @@ Review `git diff` and `git status` in your existing Git repository. Stage the ch
+ 
+ ```sh
+ git add README.md UPGRADE.md app src tests docs package.json package-lock.json .env.example .env.cloud.example
+-git commit -m "Add provider-based AI observation collection"
++git commit -m "Add editable client identity and brand aliases"
+ git push
+ ```
+ 
+diff --git a/app/observation-panel.tsx b/app/observation-panel.tsx
+index 105182e..9ad17a2 100644
+--- a/app/observation-panel.tsx
++++ b/app/observation-panel.tsx
+@@ -62,7 +62,7 @@ export function ObservationPanel({client, queries, observations, initialPrompt,
+             </form>
+         </section>
+         <section className="panel">
+-            <div className="panel-heading"><div><h2>Saved observations</h2><p>Rates describe the latest 200 observations across API runs and imports. Repeat samples count separately.</p></div><button className="secondary" disabled={busy} onClick={onImport}><Plus size={16}/>Import observations</button></div>
++            <div className="panel-heading"><div><h2>Saved observations</h2><p>Rates describe the latest 200 observations across API runs and imports. Repeat samples count separately. Mentions use the current brand name and configured aliases.</p></div><button className="secondary" disabled={busy} onClick={onImport}><Plus size={16}/>Import observations</button></div>
+             {observations.length?observations.map(o=><details className="observation" key={o.id}><summary><div><span className="intent">{o.engine} · {o.surface}</span><strong>{o.prompt}</strong><small>{o.model} · {new Date(o.observedAt).toLocaleString()} · {o.source==='ai-provider'?'API collection':'manual import'}</small></div><ChevronDown size={18}/></summary><Answer observation={o}/><div className="citation-links">{o.citations.length?o.citations.map((u,i)=><a href={u} key={i} target="_blank" rel="noreferrer">{u}</a>):<span className="muted">No citations were included in this answer.</span>}</div></details>):<div className="empty large"><Globe size={34}/><h3>No observations yet</h3><p>Connect a provider and run your first question above. Mention and citation rates appear after a successful collection.</p></div>}
+         </section>
+     </>;
+diff --git a/app/workbench-ui.tsx b/app/workbench-ui.tsx
+index 64fe474..3802f03 100644
+--- a/app/workbench-ui.tsx
++++ b/app/workbench-ui.tsx
+@@ -13,15 +13,15 @@ const layers=[{name:'Experience & API',status:'Implemented',text:'React workspac
+ 
+ function download(data:unknown,name:string){const u=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=u;a.download=name;a.click();URL.revokeObjectURL(u)}
+ export default function WorkbenchUI(){
+- const [clients,setClients]=useState<Client[]>([]),[detail,setDetail]=useState<Detail>(demo),[tab,setTab]=useState('Overview'),[modal,setModal]=useState<'client'|'audit'|'observation'|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[auth,setAuth]=useState(false),[loading,setLoading]=useState(true),[selectedLayer,setSelectedLayer]=useState(2);
++ const [clients,setClients]=useState<Client[]>([]),[detail,setDetail]=useState<Detail>(demo),[tab,setTab]=useState('Overview'),[modal,setModal]=useState<'client'|'audit'|'observation'|'identity'|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[auth,setAuth]=useState(false),[loading,setLoading]=useState(true),[selectedLayer,setSelectedLayer]=useState(2);
+  const [observationPrompt,setObservationPrompt]=useState('');
+  const [html,setHtml]=useState(''),[pageUrl,setPageUrl]=useState(''),[json,setJson]=useState('');const dialog=useRef<HTMLDialogElement>(null),generation=useRef(0);
+  const c=detail.client,isDemo=c.id==='demo',audit=detail.audits[0];
+  useEffect(()=>{api<Client[]>('clients').then((rows:Client[])=>{setClients(rows);if(rows[0])return api<Detail>('clients/'+rows[0].id).then(setDetail)}).catch(e=>{if(e.message==='Sign in required')setAuth(true);else setError(e.message)}).finally(()=>setLoading(false))},[]);
+  useEffect(()=>{if(modal)dialog.current?.showModal();else dialog.current?.close()},[modal]);
+  async function select(id:string){const g=++generation.current;setError('');setLoading(true);try{const d=id==='demo'?demo:await api<Detail>('clients/'+id);if(g===generation.current)setDetail(d)}catch(e){setError((e as Error).message)}finally{if(g===generation.current)setLoading(false)}}
+- function open(type:'client'|'audit'|'observation'){setError('');if(type!=='client'&&isDemo){setNotice('Create a client to save your own evidence. The sample is read-only.');return}setPageUrl(c.domain);setModal(type)}
+- async function submit(e:React.FormEvent<HTMLFormElement>){e.preventDefault();setBusy(true);setError('');const f=new FormData(e.currentTarget);try{if(modal==='client'){const split=(k:string)=>String(f.get(k)||'').split(',').map(s=>s.trim()).filter(Boolean);const n=await api<Client>('clients',{name:f.get('name'),domain:f.get('domain'),industry:f.get('industry'),market:f.get('market'),products:split('products'),competitors:split('competitors')});setClients(s=>[n,...s]);await select(n.id);setNotice('Client created. Import a page to establish the first baseline.')}else if(modal==='audit'){await api(`clients/${c.id}/audits`,{url:pageUrl,html});await select(c.id);setHtml('');setNotice('Audit saved with its evidence hash and rubric version.')}else{await api(`clients/${c.id}/observations`,JSON.parse(json));await select(c.id);setJson('');setNotice('Observations saved. Rates describe the latest 200 observations.')}setModal(null)}catch(e){setError((e as Error).message)}finally{setBusy(false)}}
++ function open(type:'client'|'audit'|'observation'|'identity'){setError('');if(type!=='client'&&isDemo){setNotice('Create a client to save your own evidence. The sample is read-only.');return}setPageUrl(c.domain);setModal(type)}
++ async function submit(e:React.FormEvent<HTMLFormElement>){e.preventDefault();setBusy(true);setError('');const f=new FormData(e.currentTarget);try{if(modal==='identity'){const n=await api<Client>(`clients/${c.id}/identity`,{name:f.get('name'),brandAliases:String(f.get('brandAliases')||'').split(',').map(s=>s.trim()).filter(Boolean)});setClients(rows=>rows.map(row=>row.id===n.id?n:row));setDetail(await api<Detail>('clients/'+n.id));setNotice('Brand identity saved. Mention rates were recalculated from your saved answers. Existing audit snapshots are unchanged; import the page again to reassess brand cues.')}else if(modal==='client'){const split=(k:string)=>String(f.get(k)||'').split(',').map(s=>s.trim()).filter(Boolean);const n=await api<Client>('clients',{name:f.get('name'),domain:f.get('domain'),industry:f.get('industry'),market:f.get('market'),products:split('products'),competitors:split('competitors')});setClients(s=>[n,...s]);await select(n.id);setNotice('Client created. Import a page to establish the first baseline.')}else if(modal==='audit'){await api(`clients/${c.id}/audits`,{url:pageUrl,html});await select(c.id);setHtml('');setNotice('Audit saved with its evidence hash and rubric version.')}else{await api(`clients/${c.id}/observations`,JSON.parse(json));await select(c.id);setJson('');setNotice('Observations saved. Rates describe the latest 200 observations.')}setModal(null)}catch(e){setError((e as Error).message)}finally{setBusy(false)}}
+  const opportunities=audit?.dimensions.filter(d=>d.score!==null&&d.score<100).sort((a,b)=>b.weight*(100-b.score!)-a.weight*(100-a.score!))||[];
+  return <div className="shell">
+  <aside className="sidebar"><a className="brand" href="/"><span className="brand-icon"><Layers size={23}/></span><span>GEO<span className="brand-light"> workbench</span></span></a><div className="workspace-label">CLIENT INTELLIGENCE</div><nav>{nav.map(n=><button key={n.name} className={tab===n.name?'nav active':'nav'} onClick={()=>setTab(n.name)}><n.icon size={19}/>{n.name}</button>)}</nav><div className="sidebar-bottom"><span className="phase">OBSERVATIONS · V0.2</span><p>Evidence before inference.</p><span>Client consulting workspace</span></div></aside>
+@@ -29,7 +29,7 @@ export default function WorkbenchUI(){
+  <main><div className="heading"><div><div className="eyebrow">GENERATIVE SEARCH INTELLIGENCE</div><h1>{tab==='Overview'?'Client overview':tab}</h1><p className="subtitle">{tab==='Overview'?'Turn implementation evidence into a focused action plan.':tab==='Query universe'?'A repeatable starting set of questions by intent.':tab==='Observations'?'Inspect the answers and citations behind measured visibility.':tab==='Integrations'?'One evidence model. Multiple sources.': 'A portable core with replaceable adapters.'}</p></div><button className="primary" onClick={()=>open('client')} disabled={busy}><Plus size={17}/>Add client</button></div>
+  {auth&&<div className="banner">Authentication required. Reload to sign in. <a href="/">Reload workspace</a></div>}
+  {error&&!modal&&<div className="error" role="alert">{error} <button onClick={()=>select(c.id)}>Retry</button></div>}{notice&&<div className="notice" role="status">{notice}<button aria-label="Dismiss notification" onClick={()=>setNotice('')}><X size={16}/></button></div>}
+- <div className="clientbar"><div className="client-avatar">{c.name.slice(0,1)}</div><div className="client-name"><label className="sr-only" htmlFor="client-select">Selected client</label><select id="client-select" disabled={loading||busy} value={c.id} onChange={e=>select(e.target.value)}><option value="demo">Northstar · sample client</option>{clients.map(n=><option key={n.id} value={n.id}>{n.name}</option>)}</select><span>{c.domain.replace('https://','')} <span className="divider">|</span> {c.market}</span></div><span className="chip">{isDemo?'ILLUSTRATIVE SAMPLE':'CLIENT WORKSPACE'}</span><button className="secondary" onClick={()=>open('audit')} disabled={loading||busy}><Upload size={16}/>Import page</button></div>
++ <div className="clientbar"><div className="client-avatar">{c.name.slice(0,1)}</div><div className="client-name"><label className="sr-only" htmlFor="client-select">Selected client</label><select id="client-select" disabled={loading||busy} value={c.id} onChange={e=>select(e.target.value)}><option value="demo">Northstar · sample client</option>{clients.map(n=><option key={n.id} value={n.id}>{n.name}</option>)}</select><span>{c.domain.replace('https://','')} <span className="divider">|</span> {c.market}</span></div><span className="chip">{isDemo?'ILLUSTRATIVE SAMPLE':'CLIENT WORKSPACE'}</span><button className="secondary" onClick={()=>open('identity')} disabled={loading||busy||isDemo}>Edit client</button><button className="secondary" onClick={()=>open('audit')} disabled={loading||busy}><Upload size={16}/>Import page</button></div>
+  {loading?<div className="panel loading" role="status">Loading your workspace…</div>:<>
+  {tab==='Overview'&&<><div className="metrics"><section className="score-card"><div><span className="metric-label">Assessed readiness</span><div className="score-value">{audit?audit.score:'—'}<small>/100</small></div><p>{audit?`${audit.coverage}% rubric coverage`:'No page audit yet'}</p></div><div className="score-ring" style={{background:`conic-gradient(#57e3c2 ${(audit?.score||0)*3.6}deg,#284655 0)`}}><div><Layers size={25}/><span>GEO</span></div></div><footer>Page-level implementation cues · not a ranking</footer></section><section className="metric-card"><span className="metric-label">AI mention rate</span><div className="metric-number">{detail.visibility.mentionRate===null?'—':detail.visibility.mentionRate+'%'}</div><p>{detail.visibility.sample?`${detail.visibility.sample} observations`:'Not measured'}</p><button className="text-button" onClick={()=>{setTab('Observations')}}>Review observations</button></section><section className="metric-card"><span className="metric-label">Client citation rate</span><div className="metric-number">{detail.visibility.citationRate===null?'—':detail.visibility.citationRate+'%'}</div><p>{detail.visibility.sample?'Matched to client domain':'No engine evidence yet'}</p><span className="muted">Observed sample only</span></section><section className="metric-card"><span className="metric-label">Implementation gaps</span><div className="metric-number">{audit?opportunities.length:'—'}</div><p>{audit?'Assessed areas with missing cues':'Establish a baseline'}</p><span className="muted">{detail.queries.length} candidate prompts</span></section></div>
+  <div className="content-grid"><section className="panel"><div className="panel-heading"><div><h2>Readiness breakdown</h2><p>{audit?'Every score has traceable evidence.':'Import HTML to assess the first page.'}</p></div><SlidersHorizontal size={19}/></div>{audit?<div className="dimensions">{audit.dimensions.map(d=><div className="dimension" key={d.id}><div><span>{d.name}</span><small>{d.weight}% weight</small></div><div className="bar"><i style={{width:d.score===null?'0%':d.score+'%'}}/></div><span className={d.score===null?'unknown':'dimension-value'}>{d.score===null?'Not assessed':d.score}</span></div>)}</div>:<div className="empty"><FileText size={30}/><p>No evidence imported.</p><button className="primary" onClick={()=>open('audit')}>Import page</button></div>}<div className="panel-note">Score = weighted cue scores ÷ assessed weight. Unknown dimensions are excluded. High cue scores do not establish content quality or AI visibility.</div></section>
+@@ -39,7 +39,7 @@ export default function WorkbenchUI(){
+  {tab==='Observations'&&<ObservationPanel client={c} queries={detail.queries} observations={detail.observations} initialPrompt={observationPrompt} busy={busy} onBusy={setBusy} onImport={()=>open('observation')} onSaved={async()=>{setDetail(await api<Detail>('clients/'+c.id))}}/>}
+  {tab==='Integrations'&&<><div className="banner">Configure AI providers in the server .env file. Open Observations to check connection status and run a query.</div><div className="integration-grid">{[{title:'Page evidence',icon:FileText,state:'Available',text:'Import HTML from any site or CMS. Bounded payloads, evidence hashes and transparent cue scoring.',items:['HTML import · implemented','HTTP crawler · planned','Rendered browser capture · planned']},{title:'AI observations',icon:Globe,state:'Runner available',text:'Normalize answers and citations while retaining the collection surface and model.',items:['JSON observation import · implemented','OpenAI web-search API · implemented','Gemini / other providers and campaign jobs · planned']},{title:'CMS connectors',icon:Layers,state:'Port defined',text:'Read content and stage drafts through a common contract. Publishing requires a future approval workflow.',items:['AEM / Contentstack · planned','WordPress / Contentful · planned','Sitecore / Drupal · planned']},{title:'Data & jobs',icon:Database,state:'Storage available',text:'Persistence is isolated behind a repository. Scale heavy collection through a job queue.',items:['SQLite / D1 repositories · implemented','PostgreSQL adapter · planned','Queue / worker adapter · planned']}].map(x=><section className="panel integration" key={x.title}><x.icon size={28}/><span className="chip">{x.state}</span><h2>{x.title}</h2><p>{x.text}</p><ul>{x.items.map(t=><li key={t}>{t}</li>)}</ul></section>)}</div></>}
+  {tab==='Architecture'&&<><section className="architecture-intro"><span className="phase">MODULAR MONOLITH FIRST</span><h2>Keep the domain stable.<br/>Replace what surrounds it.</h2><p>The first deployment runs together. Collection and evaluation can become independent workers without moving business rules into vendor integrations.</p></section><div className="content-grid architecture-grid"><section className="panel architecture-map">{layers.map((l,i)=><button key={l.name} className={selectedLayer===i?'layer selected':'layer'} onClick={()=>setSelectedLayer(i)}><span>{String(i+1).padStart(2,'0')}</span><strong>{l.name}</strong><small>{l.status}</small></button>)}<p>Dependencies point inward to contracts and domain rules.</p></section><section className="panel layer-detail"><Network size={27}/><h2>{layers[selectedLayer].name}</h2><span className="chip">{layers[selectedLayer].status}</span><p>{layers[selectedLayer].text}</p><div className="evidence"><span>SCALING SEQUENCE</span>1. Evidence and scoring baseline<br/>2. Queued crawl + provider sampling<br/>3. Tenant teams + connector approvals<br/>4. Isolate busy services using measured load</div></section></div><section className="panel guardrails"><h2>Foundation decisions</h2><div><p><Shield size={19}/><span><strong>Identity-scoped records</strong>Every read and write is scoped to the signed-in user. Organization roles come later.</span></p><p><FileText size={19}/><span><strong>Versioned evidence</strong>Audit history retains source hashes and rubric versions. Raw HTML is discarded after analysis.</span></p><p><Layers size={19}/><span><strong>Vendor-neutral contracts</strong>Provider and CMS SDKs belong in adapters. A connector is an implementation, not a change to the core.</span></p></div></section></>}
+- </>}<footer className="footer"><span>GEO Workbench <span>·</span> Observations v0.2.0</span><span>{isDemo?'Sample data. No live client claims.':'No ranking guarantees. Evidence-based assessment.'}</span></footer></main></div>
+- <dialog ref={dialog} onCancel={e=>{if(busy)e.preventDefault();else setModal(null)}}><form onSubmit={submit}><div className="modal-heading"><h2>{modal==='client'?'Create a client':modal==='audit'?'Import page evidence':'Import AI observations'}</h2><button type="button" aria-label="Close dialog" onClick={()=>setModal(null)} disabled={busy}><X size={21}/></button></div>{modal==='client'?<><label>Brand name<input name="name" required minLength={2} maxLength={100} placeholder="Client or brand name"/></label><label>Website URL<input name="domain" required type="url" placeholder="https://client.com"/></label><div className="form-grid"><label>Industry<input name="industry" required minLength={2} maxLength={120} placeholder="Enterprise software"/></label><label>Target market<input name="market" required defaultValue="United States" minLength={2} maxLength={100}/></label></div><label>Products or services <small>Comma separated · up to 10</small><input name="products" placeholder="Enterprise CMS, Digital asset management"/></label><label>Competitor brands <small>Comma separated · up to 5</small><input name="competitors" placeholder="Competitor one, Competitor two"/></label></>:modal==='audit'?<><p className="muted">Paste exported or rendered HTML. This audits one page; live crawler access and site-wide authority remain unassessed.</p><label>Original page URL<input required type="url" value={pageUrl} onChange={e=>setPageUrl(e.target.value)}/></label><label>HTML evidence<textarea required minLength={20} maxLength={250000} value={html} onChange={e=>setHtml(e.target.value)} placeholder="Paste page HTML…" rows={10}/></label><label className="file-label"><Upload size={16}/>Or choose an HTML file<input type="file" accept=".html,.htm,text/html" onChange={async e=>{const f=e.target.files?.[0];if(f){if(f.size>250000){setError('HTML file exceeds 250 KB.');return}setHtml(await f.text())}}}/></label><small>HTML is analyzed as text and never rendered. Only findings and its SHA-256 hash are stored.</small></>:<><p className="muted">JSON array, up to 20 observations per import. Required fields: engine, surface, model, prompt, response, citations (URL array), observedAt (ISO timestamp).</p><textarea aria-label="Observation JSON" required value={json} onChange={e=>setJson(e.target.value)} rows={13} placeholder='[{"engine":"…","surface":"…","model":"…","prompt":"…","response":"…","citations":[],"observedAt":"…"}]'/><button className="text-button" type="button" onClick={()=>setJson(JSON.stringify([{engine:'Your provider',surface:'API',model:'Exact model',prompt:'The original question',response:'The original response',citations:[],observedAt:new Date().toISOString()}],null,2))}>Insert template</button></>}{error&&<div className="error" role="alert">{error}</div>}<div className="modal-footer"><button type="button" className="secondary" onClick={()=>setModal(null)} disabled={busy}>Cancel</button><button className="primary" disabled={busy||auth}>{busy?'Saving…':modal==='client'?'Create client':modal==='audit'?'Analyze & save':'Import & save'}</button></div></form></dialog>
++ </>}<footer className="footer"><span>GEO Workbench <span>·</span> Observations v0.2.1</span><span>{isDemo?'Sample data. No live client claims.':'No ranking guarantees. Evidence-based assessment.'}</span></footer></main></div>
++ <dialog ref={dialog} onCancel={e=>{if(busy)e.preventDefault();else setModal(null)}}><form onSubmit={submit}><div className="modal-heading"><h2>{modal==='identity'?'Edit client identity':modal==='client'?'Create a client':modal==='audit'?'Import page evidence':'Import AI observations'}</h2><button type="button" aria-label="Close dialog" onClick={()=>setModal(null)} disabled={busy}><X size={21}/></button></div>{modal==='identity'?<><p className="muted">Use the public brand name and verified aliases. Saved answers are re-evaluated using this identity. Historical audit scores stay unchanged.</p><label>Brand name<input name="name" required minLength={2} maxLength={100} defaultValue={c.name}/></label><label>Brand aliases <small>Comma separated · up to 10</small><input name="brandAliases" defaultValue={(c.brandAliases||[]).join(', ')} placeholder="WFG, WorldFinancialgroup"/></label><small>Website: {c.domain}. This update preserves your client ID, audits and observations.</small></>:modal==='client'?<><label>Brand name<input name="name" required minLength={2} maxLength={100} placeholder="Client or brand name"/></label><label>Website URL<input name="domain" required type="url" placeholder="https://client.com"/></label><div className="form-grid"><label>Industry<input name="industry" required minLength={2} maxLength={120} placeholder="Enterprise software"/></label><label>Target market<input name="market" required defaultValue="United States" minLength={2} maxLength={100}/></label></div><label>Products or services <small>Comma separated · up to 10</small><input name="products" placeholder="Enterprise CMS, Digital asset management"/></label><label>Competitor brands <small>Comma separated · up to 5</small><input name="competitors" placeholder="Competitor one, Competitor two"/></label></>:modal==='audit'?<><p className="muted">Paste exported or rendered HTML. This audits one page; live crawler access and site-wide authority remain unassessed.</p><label>Original page URL<input required type="url" value={pageUrl} onChange={e=>setPageUrl(e.target.value)}/></label><label>HTML evidence<textarea required minLength={20} maxLength={250000} value={html} onChange={e=>setHtml(e.target.value)} placeholder="Paste page HTML…" rows={10}/></label><label className="file-label"><Upload size={16}/>Or choose an HTML file<input type="file" accept=".html,.htm,text/html" onChange={async e=>{const f=e.target.files?.[0];if(f){if(f.size>250000){setError('HTML file exceeds 250 KB.');return}setHtml(await f.text())}}}/></label><small>HTML is analyzed as text and never rendered. Only findings and its SHA-256 hash are stored.</small></>:<><p className="muted">JSON array, up to 20 observations per import. Required fields: engine, surface, model, prompt, response, citations (URL array), observedAt (ISO timestamp).</p><textarea aria-label="Observation JSON" required value={json} onChange={e=>setJson(e.target.value)} rows={13} placeholder='[{"engine":"…","surface":"…","model":"…","prompt":"…","response":"…","citations":[],"observedAt":"…"}]'/><button className="text-button" type="button" onClick={()=>setJson(JSON.stringify([{engine:'Your provider',surface:'API',model:'Exact model',prompt:'The original question',response:'The original response',citations:[],observedAt:new Date().toISOString()}],null,2))}>Insert template</button></>}{error&&<div className="error" role="alert">{error}</div>}<div className="modal-footer"><button type="button" className="secondary" onClick={()=>setModal(null)} disabled={busy}>Cancel</button><button className="primary" disabled={busy||auth}>{busy?'Saving…':modal==='identity'?'Save identity':modal==='client'?'Create client':modal==='audit'?'Analyze & save':'Import & save'}</button></div></form></dialog>
+  </div>
+ }
+diff --git a/docs/ARCHITECTURE.md b/docs/ARCHITECTURE.md
+index a89ece5..a048c88 100644
+--- a/docs/ARCHITECTURE.md
++++ b/docs/ARCHITECTURE.md
+@@ -1,4 +1,4 @@
+-# GEO Workbench architecture — v0.2.0
++# GEO Workbench architecture — v0.2.1
+ 
+ The standalone product is a modular monolith: React/Vite UI, a Node 24 HTTP composition root, application services, a framework-free domain core, and replaceable infrastructure adapters. SQLite supports one local machine or single VM. The exact earlier hosted React/Vinext + Worker/D1 edition is archived in `reference/`.
+ 
+@@ -33,7 +33,7 @@ The portable server is the active composition root. The hosted Site is not chang
+ 
+ ## Evidence interpretation
+ 
+-Readiness uses five assessed HTML cue dimensions totaling 70% of the rubric; unknown dimensions stay null and are excluded from the normalized weighted score. Scores assess implementation cues, not ranking or content quality. Brand matching currently uses the configured exact brand name with Unicode boundaries. Citation matching requires the client hostname or a true subdomain. API results and consumer search experiences are distinct samples. Current rates combine the latest 200 observations and are descriptive, not population estimates or causal impact.
++Readiness uses five assessed HTML cue dimensions totaling 70% of the rubric; unknown dimensions stay null and are excluded from the normalized weighted score. Scores assess implementation cues, not ranking or content quality. Brand matching uses the canonical brand name and explicitly configured aliases, with case-insensitive Unicode boundaries and flexible whitespace between words. It does not guess aliases. Citation matching requires the client hostname or a true subdomain. API results and consumer search experiences are distinct samples. Current rates combine the latest 200 observations and are descriptive, not population estimates or causal impact.
+ 
+ ## Next increments for scale
+ 
+@@ -44,3 +44,9 @@ Readiness uses five assessed HTML cue dimensions totaling 70% of the rubric; unk
+ 5. Add organization membership, roles, audit logs and CMS read/draft adapters. Use version preconditions and explicit publication authorization.
+ 
+ Move busy collection workers out of the HTTP process when measured load requires it. Do not call the current per-process concurrency set a distributed queue or assume SQLite and local authentication already support a multi-tenant cluster.
++
++## Client identity correction
++
++`ClientIdentityService` depends on `Repository` and `ClientIdentityStore` ports. The SQLite implementation atomically updates only the name, aliases and update timestamp with an owner-scoped query. It preserves the website, creation time and all child records. `POST /api/v1/clients/{id}/identity` validates a name and up to 10 aliases; unrelated field changes are rejected. Aliases are trimmed and deduplicated case-insensitively.
++
++The dashboard recalculates mention rates against saved answers using the current identity; this is a matching correction, not new provider evidence or an increase in real-world visibility. Citation rates still depend on the unchanged client domain. Existing audit snapshots remain immutable. New audits use rubric `readiness-cues/1.1.0`, whose brand cue also recognizes aliases with word boundaries. Audits from earlier rubric versions should not be treated as a like-for-like score comparison without examining that rule change.
+diff --git a/docs/OBSERVATIONS.md b/docs/OBSERVATIONS.md
+index f71189c..d96d703 100644
+--- a/docs/OBSERVATIONS.md
++++ b/docs/OBSERVATIONS.md
+@@ -18,7 +18,7 @@
+ 
+ ## What the result means
+ 
+-This adapter records the Responses API with web search, not the consumer ChatGPT interface. Those surfaces can return different answers. A missing client mention is valid evidence when a complete answer is collected. A failed request is not evidence of zero visibility and is never added to the denominator. Rates currently combine the latest 200 observations across surfaces/models; use the retained metadata to interpret the sample. Repeat runs are separate samples.
++This adapter records the Responses API with web search, not the consumer ChatGPT interface. Those surfaces can return different answers. A missing client mention is valid evidence when a complete answer is collected. A failed request is not evidence of zero visibility and is never added to the denominator. Mention matching uses the current client brand name and explicit aliases. Correct these with **Edit client**; saved response text stays unchanged. Rates currently combine the latest 200 observations across surfaces/models; use the retained metadata to interpret the sample. Repeat runs are separate samples.
+ 
+ The adapter requests web search explicitly, caps output at 2,048 tokens, times out at 60 seconds, and stores the provider response ID. Only HTTP(S) citation URLs without credentials are accepted. No automatic retry is performed. API costs include model usage and search tool usage; there is no account-level currency budget in this version. Configure provider-side spend limits and start with one question.
+ 
+diff --git a/docs/SETUP.md b/docs/SETUP.md
+index 0a3ec44..199bb24 100644
+--- a/docs/SETUP.md
++++ b/docs/SETUP.md
+@@ -2,7 +2,7 @@
+ 
+ ## 1. What you are downloading
+ 
+-`GEO_Workbench_Complete_Source.zip` contains one top-level `geo-workbench-v0.2.0/` folder, application source, dependency lockfile, Docker deployment files, tests and these instructions. No database, installed dependencies, personal credentials or build output is included.
++`GEO_Workbench_Complete_Source.zip` contains one top-level `geo-workbench-v0.2.1/` folder, application source, dependency lockfile, Docker deployment files, tests and these instructions. No database, installed dependencies, personal credentials or build output is included.
+ 
+ Default runtime: React + Vite frontend, Node 24 HTTP API, SQLite repository. Business logic and contracts are shared with the first hosted version. A complete original Sites source snapshot is included under `reference/`; it does not require restoring anything for the standalone setup.
+ 
+@@ -23,12 +23,12 @@ npm --version
+ 
+ `node --version` must show v24.x. Add the PATH export line to your shell configuration if Node 24 is not selected in new Terminal windows. `.nvmrc` is included for users who already use nvm: run `nvm install` and `nvm use` inside the project instead.
+ 
+-Extract the download, then enter its `geo-workbench-v0.2.0` folder. For a ZIP in Downloads:
++Extract the download, then enter its `geo-workbench-v0.2.1` folder. For a ZIP in Downloads:
+ 
+ ```sh
+ cd ~/Downloads
+ unzip GEO_Workbench_Complete_Source.zip
+-cd geo-workbench-v0.2.0
++cd geo-workbench-v0.2.1
+ cp .env.example .env
+ npm ci
+ npm run dev
+@@ -50,7 +50,7 @@ npm test
+ npm start
+ ```
+ 
+-Open http://localhost:8080. `npm test` performs a build and runs 22 checks. You can also use `npm run build` when building without tests.
++Open http://localhost:8080. `npm test` performs a build and runs 28 checks. You can also use `npm run build` when building without tests.
+ 
+ ### Local data
+ 
+@@ -181,7 +181,7 @@ Use a unique backup filename each time and store backups outside the VM too. Sto
+ 
+ ## 7. What is verified and what remains
+ 
+-Verified in Linux with Node 24: type checks, frontend/server build, 12 domain/application tests, 4 portable integration tests and 6 provider/collection tests. HTTP tests cover creating clients, saving audits and observations, Basic authentication, spoofed identity-header rejection, origin checks, SQLite persistence and failed-batch rollback.
++Verified in Linux with Node 24: type checks, frontend/server build, 12 domain/application tests, 4 portable integration tests, 6 provider/collection tests and 6 identity tests. HTTP tests cover creating clients, saving audits and observations, Basic authentication, spoofed identity-header rejection, origin checks, SQLite persistence and failed-batch rollback.
+ 
+ The Mac commands use the same Node/Vite code paths, but were not executed on an actual Mac. Docker is unavailable in the build environment, so the image/Compose/HTTPS deployment has not been executed. The package includes a normal npm lockfile using public npm registry URLs; clean downloading of dependencies requires Internet access.
+ 
+diff --git a/docs/VALIDATION.md b/docs/VALIDATION.md
+index 078c9ed..0a8a714 100644
+--- a/docs/VALIDATION.md
++++ b/docs/VALIDATION.md
+@@ -11,3 +11,5 @@
+ Testing ran on Linux with Node v24.19.0. Mac execution and Docker/Compose deployment were not tested in this environment. No browser visual verification is claimed. The supplied cloud configuration requires a hostname, valid DNS, inbound 80/443 and an edited `.env` before it can issue HTTPS and run.
+ 
+ The new provider flow verifies citation extraction, rejected credentials/quota failures, incomplete responses, missing web search, unsafe citation rejection, no fabricated observations, owner checks, concurrent request limits, completed-request replay, and HTTP origin/input validation. Live OpenAI calls were not tested because no API key was supplied. No credentials were requested in chat.
++
++Six additional identity tests pass (28 total). They cover canonical and alias matching, whitespace and Unicode boundaries, literal regex characters, hidden HTML exclusion, owner-scoped atomic edits, deduplication, preservation of observations/old audit snapshots, persisted identities across SQLite connections, HTTP validation/origin rejection, and updated mention rates without changing citation rates.
+diff --git a/docs/openapi.json b/docs/openapi.json
+index adf3cf4..a7d2d91 100644
+--- a/docs/openapi.json
++++ b/docs/openapi.json
+@@ -2,7 +2,7 @@
+   "openapi": "3.1.0",
+   "info": {
+     "title": "GEO Workbench API",
+-    "version": "0.2.0",
++    "version": "0.2.1",
+     "description": "Standalone edition: loopback-only local owner identity or HTTP Basic authentication over HTTPS. Same-origin browser writes required. Original Sites adapter uses trusted platform identity."
+   },
+   "paths": {
+@@ -277,6 +277,69 @@
+           }
+         }
+       }
++    },
++    "/api/v1/clients/{id}/identity": {
++      "parameters": [
++        {
++          "name": "id",
++          "in": "path",
++          "required": true,
++          "schema": {
++            "type": "string"
++          }
++        }
++      ],
++      "post": {
++        "summary": "Update public brand name and explicit aliases while preserving the client and evidence",
++        "requestBody": {
++          "required": true,
++          "content": {
++            "application/json": {
++              "schema": {
++                "type": "object",
++                "additionalProperties": false,
++                "required": [
++                  "name",
++                  "brandAliases"
++                ],
++                "properties": {
++                  "name": {
++                    "type": "string",
++                    "minLength": 2,
++                    "maxLength": 100
++                  },
++                  "brandAliases": {
++                    "type": "array",
++                    "maxItems": 10,
++                    "items": {
++                      "type": "string",
++                      "minLength": 2,
++                      "maxLength": 100
++                    }
++                  }
++                }
++              }
++            }
++          }
++        },
++        "responses": {
++          "200": {
++            "description": "Updated Client"
++          },
++          "400": {
++            "description": "Invalid input"
++          },
++          "401": {
++            "description": "Sign in required"
++          },
++          "403": {
++            "description": "Origin denied"
++          },
++          "404": {
++            "description": "Client not found"
++          }
++        }
++      }
+     }
+   },
+   "components": {
+diff --git a/package-lock.json b/package-lock.json
+index 7037c4b..b09d32c 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -1,12 +1,12 @@
+ {
+   "name": "geo-workbench",
+-  "version": "0.2.0",
++  "version": "0.2.1",
+   "lockfileVersion": 3,
+   "requires": true,
+   "packages": {
+     "": {
+       "name": "geo-workbench",
+-      "version": "0.2.0",
++      "version": "0.2.1",
+       "dependencies": {
+         "lucide-react": "1.31.0",
+         "react": "19.2.6",
+diff --git a/package.json b/package.json
+index 4355c67..14d469a 100644
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "geo-workbench",
+-  "version": "0.2.0",
++  "version": "0.2.1",
+   "private": true,
+   "type": "module",
+   "engines": {
+@@ -10,7 +10,7 @@
+     "dev": "node --env-file-if-exists=.env scripts/dev.mjs",
+     "build": "node scripts/build-portable.mjs",
+     "start": "node --env-file-if-exists=.env dist/server/server/node-server.js",
+-    "test": "node scripts/build-portable.mjs && node --test tests/core.test.mjs tests/portable.test.mjs tests/observations.test.mjs",
++    "test": "node scripts/build-portable.mjs && node --test tests/core.test.mjs tests/portable.test.mjs tests/observations.test.mjs tests/identity.test.mjs",
+     "typecheck": "tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.server.json --noEmit"
+   },
+   "dependencies": {
+diff --git a/src/adapters/validation.ts b/src/adapters/validation.ts
+index c4e5999..2aa76e6 100644
+--- a/src/adapters/validation.ts
++++ b/src/adapters/validation.ts
+@@ -3,3 +3,5 @@ export const urlSchema = z.string().url().max(2048).refine(s => { const u = new
+ export const clientSchema = z.object({ name: z.string().trim().min(2).max(100), domain: urlSchema, industry: z.string().trim().min(2).max(120), market: z.string().trim().min(2).max(100), products: z.array(z.string().trim().min(1).max(120)).max(10), competitors: z.array(z.string().trim().min(1).max(100)).max(5) }).strict();
+ export const auditSchema = z.object({ url: urlSchema, html: z.string().min(20).max(250000) }).strict();
+ export const observationSchema = z.array(z.object({ engine: z.string().trim().min(1).max(60), surface: z.string().trim().min(1).max(100), model: z.string().trim().min(1).max(100), prompt: z.string().trim().min(5).max(2000), response: z.string().trim().min(1).max(12000), citations: z.array(urlSchema).max(30), observedAt: z.string().datetime().refine(s => new Date(s).getTime() <= Date.now(), 'Observation date cannot be in the future') }).strict()).min(1).max(20);
++
++export const identitySchema = z.object({name: z.string().trim().min(2).max(100), brandAliases: z.array(z.string().trim().min(2).max(100)).max(10)}).strict();
+diff --git a/src/application/client-identity.ts b/src/application/client-identity.ts
+new file mode 100644
+index 0000000..db6f840
+--- /dev/null
++++ b/src/application/client-identity.ts
+@@ -0,0 +1,18 @@
++import type {ClientIdentity, ClientIdentityStore, Repository} from '../core/contracts';
++
++export class ClientIdentityService {
++    constructor(private repo: Repository & ClientIdentityStore) {}
++    async update(owner: string, clientId: string, input: ClientIdentity) {
++        if (!await this.repo.getClient(owner, clientId)) throw new Error('Client not found');
++        const name = input.name.trim();
++        const seen = new Set([name.toLocaleLowerCase('en-US')]);
++        const brandAliases = input.brandAliases.map(s => s.trim()).filter(s => {
++            const key = s.toLocaleLowerCase('en-US');
++            if (!s || seen.has(key)) return false;
++            seen.add(key); return true;
++        });
++        const saved = await this.repo.updateIdentity(owner, clientId, {name, brandAliases}, new Date().toISOString());
++        if (!saved) throw new Error('Client not found');
++        return saved;
++    }
++}
+diff --git a/src/core/brand-matching.ts b/src/core/brand-matching.ts
+new file mode 100644
+index 0000000..5bf6dfd
+--- /dev/null
++++ b/src/core/brand-matching.ts
+@@ -0,0 +1,10 @@
++import type {Client} from './contracts';
++
++/** Explicit identity variants only; do not guess aliases or strip all spaces. */
++export function mentionsBrand(client: Client, text: string): boolean {
++    const variants = [client.name, ...client.brandAliases || []].map(v => v.trim()).filter(Boolean);
++    return variants.some(v => {
++        const escaped = v.split(/\s+/).map(token => token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s+');
++        return new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}($|[^\\p{L}\\p{N}])`, 'iu').test(text);
++    });
++}
+diff --git a/src/core/contracts.ts b/src/core/contracts.ts
+index 923a5a4..ab1b441 100644
+--- a/src/core/contracts.ts
++++ b/src/core/contracts.ts
+@@ -1,6 +1,8 @@
+ export type Client = {
+     id: string;
+     name: string;
++    brandAliases?: string[];
++    updated?: string;
+     domain: string;
+     industry: string;
+     products: string[];
+@@ -94,3 +96,8 @@ export type ProviderInfo = {id: string; label: string; model: string; configured
+ export class CollectionError extends Error {
+     constructor(message: string, readonly status = 502) { super(message); }
+ }
++
++export type ClientIdentity = {name: string; brandAliases: string[]};
++export interface ClientIdentityStore {
++    updateIdentity(owner: string, clientId: string, identity: ClientIdentity, updatedAt: string): Promise<Client | null>;
++}
+diff --git a/src/core/scoring.ts b/src/core/scoring.ts
+index 11faee0..82be733 100644
+--- a/src/core/scoring.ts
++++ b/src/core/scoring.ts
+@@ -1,5 +1,6 @@
+ import type { Client, Dimension, Observation } from './contracts';
+-export const RUBRIC_VERSION = 'readiness-cues/1.0.0';
++import {mentionsBrand} from './brand-matching';
++export const RUBRIC_VERSION = 'readiness-cues/1.1.0';
+ export function aggregate(dimensions: Dimension[]) { const known = dimensions.filter(d => d.score !== null); const coverage = known.reduce((n, d) => n + d.weight, 0); return { score: coverage ? Math.round(known.reduce((n, d) => n + d.weight * d.score!, 0) / coverage) : 0, coverage }; }
+ export function analyzeHtml(html: string, c: Client): Dimension[] {
+     const clean = html.replace(/<!--[\s\S]*?-->/g, '');
+@@ -34,7 +35,7 @@ export function analyzeHtml(html: string, c: Client): Dimension[] {
+     return [
+         d('crawl', 'Crawler access', 15, null, 'Imported HTML cannot establish robots rules, WAF access, or indexing.', 'Capture robots.txt, response headers, and crawler access evidence.'),
+         d('technical', 'Page structure', 10, noindex ? 0 : 25 * [title, h1, desc, canonical].filter(Boolean).length, `Title ${title ? 'present' : 'missing'}; H1 ${h1 ? 'present' : 'missing'}; description ${desc ? 'present' : 'missing'}; canonical ${canonical ? 'present' : 'missing'}; noindex ${noindex ? 'detected' : 'not detected in HTML'}.`, 'Review title, H1, description, canonical and intended indexing policy.'),
+-        d('entity', 'Brand clarity', 15, visible.toLowerCase().includes(c.name.toLowerCase()) ? 100 : 0, `Brand name ${visible.toLowerCase().includes(c.name.toLowerCase()) ? 'found' : 'not found'} in extracted text. This does not validate entity authority.`, 'Identify the brand and explain its products in visible content.'),
++        d('entity', 'Brand clarity', 15, mentionsBrand(c, visible) ? 100 : 0, `Configured brand name or alias ${mentionsBrand(c, visible) ? 'found' : 'not found'} in extracted text. This does not validate entity authority.`, 'Identify the brand and explain its products in visible content.'),
+         d('content', 'Answer structure', 20, 25 * [h1, /<h2\b/i.test(clean), words >= 150, /<(ul|ol|table)\b/i.test(clean)].filter(Boolean).length, `${words} extracted words; heading and list/table cues assessed. Answer accuracy and usefulness need human review.`, 'Use descriptive headings and clear, factual answers; add lists or tables where useful.'),
+         d('evidence', 'Reference cues', 15, external ? 100 : 0, `${external} external reference link(s). Sources and claims have not been verified.`, 'Support material claims with relevant, verifiable references.'),
+         d('schema', 'Structured data cues', 10, invalid ? 0 : valid ? 100 : 0, `${valid} typed JSON-LD block(s); ${invalid} invalid or untyped block(s). Syntax cues only; no semantic validation.`, 'Consider relevant structured data matching visible content. It is not required for AI visibility.'),
+@@ -44,4 +45,4 @@ export function analyzeHtml(html: string, c: Client): Dimension[] {
+     ];
+ }
+ export function queryUniverse(c: Client) { return (c.products.length ? c.products : [c.industry]).flatMap(p => [{ intent: 'Education', prompt: `What is ${p} and who is it for?` }, { intent: 'Evaluation', prompt: `Which ${p} providers should a business in ${c.market} evaluate?` }, { intent: 'Implementation', prompt: `How can a business implement ${p}?` }, ...c.competitors.map(k => ({ intent: 'Comparison', prompt: `How does ${c.name} compare with ${k} for ${p}?` }))]); }
+-export function visibility(c: Client, rows: Observation[]) { const hostname = new URL(c.domain).hostname.replace(/^www\./, ''); const escaped = c.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); const name = new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}($|[^\\p{L}\\p{N}])`, 'iu'); const mentions = rows.filter(r => name.test(r.response)).length; const citations = rows.filter(r => r.citations.some(u => { const h = new URL(u).hostname.replace(/^www\./, ''); return h === hostname || h.endsWith('.' + hostname); })).length; return { sample: rows.length, mentionRate: rows.length ? Math.round(mentions / rows.length * 100) : null, citationRate: rows.length ? Math.round(citations / rows.length * 100) : null }; }
++export function visibility(c: Client, rows: Observation[]) { const hostname = new URL(c.domain).hostname.replace(/^www\./, ''); const mentions = rows.filter(r => mentionsBrand(c, r.response)).length; const citations = rows.filter(r => r.citations.some(u => { const h = new URL(u).hostname.replace(/^www\./, ''); return h === hostname || h.endsWith('.' + hostname); })).length; return { sample: rows.length, mentionRate: rows.length ? Math.round(mentions / rows.length * 100) : null, citationRate: rows.length ? Math.round(citations / rows.length * 100) : null }; }
+diff --git a/src/server/node-server.ts b/src/server/node-server.ts
+index dbaa701..a95043a 100644
+--- a/src/server/node-server.ts
++++ b/src/server/node-server.ts
+@@ -6,10 +6,11 @@ import {pathToFileURL} from 'node:url';
+ import {z} from 'zod';
+ import {SqliteRepository} from './sqlite-repository';
+ import {Workbench} from '../application/workbench';
++import {ClientIdentityService} from '../application/client-identity';
+ import {ObservationRunner} from '../application/observation-runner';
+ import {OpenAIProvider} from './providers/openai-provider';
+ import {CollectionError, type AIProvider, type ProviderInfo} from '../core/contracts';
+-import {clientSchema,auditSchema,observationSchema} from '../adapters/validation';
++import {clientSchema,auditSchema,observationSchema,identitySchema} from '../adapters/validation';
+ export type Settings={mode:'local'|'basic';bind:string;port:number;dataDir:string;origins:string[];username:string;password:string;clientDir:string;openaiKey?:string;openaiModel?:string};
+ export function settings(e:NodeJS.ProcessEnv=process.env):Settings {
+  const mode=e.GEO_AUTH_MODE||'local';if(mode!=='local'&&mode!=='basic')throw new Error('GEO_AUTH_MODE must be local or basic');
+@@ -31,6 +32,7 @@ export function createWorkbenchServer(s:Settings, supplied?:{providers:Map<strin
+  if(!supplied&&s.openaiKey)providers.set('openai',new OpenAIProvider(s.openaiKey,s.openaiModel));
+  const info=supplied?.info||[{id:'openai',label:'OpenAI web search',model:s.openaiModel||'gpt-4.1',configured:!!s.openaiKey}];
+  const runner=new ObservationRunner(repo,providers);
++ const identities=new ClientIdentityService(repo);
+  const runSchema=z.object({provider:z.string().min(1).max(60),prompt:z.string().trim().min(5).max(2000),requestId:z.string().uuid()}).strict();
+  const server=createServer(async(req,res)=>{res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','same-origin');res.setHeader('X-Frame-Options','DENY');
+  if(s.mode==='local'){let h='';try{h=new URL('http://'+(req.headers.host||'')).hostname}catch{}if(!['127.0.0.1','localhost','[::1]'].includes(h))return json(res,403,{error:'Host denied'})}
+@@ -43,6 +45,8 @@ export function createWorkbenchServer(s:Settings, supplied?:{providers:Map<strin
+  if(!['GET','POST'].includes(req.method||''))return json(res,405,{error:'Method not allowed'});
+  if(req.method==='POST'&&!s.origins.includes(req.headers.origin||''))return json(res,403,{error:'Origin denied'});
+  if(path==='/api/v1/providers')return req.method==='GET'?json(res,200,info):json(res,405,{error:'Method not allowed'});
++ const identityMatch=path.match(/^\/api\/v1\/clients\/([^/]+)\/identity$/);
++ if(identityMatch){if(req.method!=='POST')return json(res,405,{error:'Method not allowed'});const input=identitySchema.parse(await body(req));return json(res,200,await identities.update(owner,decodeURIComponent(identityMatch[1]),input));}
+  const runMatch=path.match(/^\/api\/v1\/clients\/([^/]+)\/observation-runs$/);
+  if(runMatch){if(req.method!=='POST')return json(res,405,{error:'Method not allowed'});const input=runSchema.parse(await body(req));return json(res,200,await runner.run(owner,decodeURIComponent(runMatch[1]),input.provider,input.prompt,input.requestId));}
+  if(path==='/api/v1/clients'){
+diff --git a/src/server/sqlite-repository.ts b/src/server/sqlite-repository.ts
+index dd51a4c..38b4b5b 100644
+--- a/src/server/sqlite-repository.ts
++++ b/src/server/sqlite-repository.ts
+@@ -1,8 +1,8 @@
+ import {DatabaseSync} from 'node:sqlite';
+ import {mkdirSync} from 'node:fs';
+ import {join} from 'node:path';
+-import type {Client,Repository,Observation,ObservationLookup} from '../core/contracts';
+-export class SqliteRepository implements Repository,ObservationLookup {
++import type {Client,Repository,Observation,ObservationLookup,ClientIdentity,ClientIdentityStore} from '../core/contracts';
++export class SqliteRepository implements Repository,ObservationLookup,ClientIdentityStore {
+  readonly db:DatabaseSync;
+  constructor(dir:string){mkdirSync(dir,{recursive:true});this.db=new DatabaseSync(join(dir,'geo.sqlite'));this.db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;');
+  this.db.exec('CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY NOT NULL)');
+@@ -18,5 +18,9 @@ export class SqliteRepository implements Repository,ObservationLookup {
+  async listRecords<T>(owner:string,id:string,kind:'audit'|'observation'){return (this.db.prepare('SELECT data FROM records WHERE owner=? AND client_id=? AND kind=? ORDER BY created DESC LIMIT 200').all(owner,id,kind) as {data:string}[]).map(r=>JSON.parse(r.data) as T)}
+  async saveRecords(owner:string,id:string,kind:'audit'|'observation',rows:{id:string;created:string}[]){this.db.exec('BEGIN IMMEDIATE');try{const q=this.db.prepare('INSERT INTO records(id,owner,client_id,kind,data,created) VALUES(?,?,?,?,?,?)');for(const r of rows)q.run(r.id,owner,id,kind,JSON.stringify(r),r.created);this.db.exec('COMMIT')}catch(e){this.db.exec('ROLLBACK');throw e}}
+  async findObservation(owner:string,clientId:string,id:string){const r=this.db.prepare("SELECT data FROM records WHERE owner=? AND client_id=? AND id=? AND kind='observation'").get(owner,clientId,id) as {data:string}|undefined;return r?JSON.parse(r.data) as Observation:null}
++ async updateIdentity(owner:string,clientId:string,identity:ClientIdentity,updatedAt:string){
++ const row=this.db.prepare("UPDATE clients SET data=json_set(data,'$.name',?,'$.brandAliases',json(?),'$.updated',?) WHERE owner=? AND id=? RETURNING data").get(identity.name,JSON.stringify(identity.brandAliases),updatedAt,owner,clientId) as {data:string}|undefined;
++ return row?JSON.parse(row.data) as Client:null;
++ }
+  close(){this.db.close()}
+ }
+diff --git a/tests/core.test.mjs b/tests/core.test.mjs
+index 8a0a825..9ee07ce 100644
+--- a/tests/core.test.mjs
++++ b/tests/core.test.mjs
+@@ -4,7 +4,7 @@ import ts from 'typescript';
+ import {readFileSync,mkdirSync,writeFileSync} from 'node:fs';
+ import {pathToFileURL} from 'node:url';
+ mkdirSync('.sites-runtime/tests/core',{recursive:true});mkdirSync('.sites-runtime/tests/application',{recursive:true});
+-for(const p of ['core/contracts','core/scoring','core/demo','application/workbench']){const source=readFileSync(`src/${p}.ts`,'utf8');let out=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;out=out.replace(/from '(\.\.?\/[^']+)'/g,"from '$1.mjs'");writeFileSync(`.sites-runtime/tests/${p}.mjs`,out)}
++for(const p of ['core/contracts','core/brand-matching','core/scoring','core/demo','application/workbench']){const source=readFileSync(`src/${p}.ts`,'utf8');let out=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;out=out.replace(/from '(\.\.?\/[^']+)'/g,"from '$1.mjs'");writeFileSync(`.sites-runtime/tests/${p}.mjs`,out)}
+ const {analyzeHtml,aggregate,visibility,queryUniverse}=await import(pathToFileURL(process.cwd()+'/.sites-runtime/tests/core/scoring.mjs'));
+ const {sampleClient:c,sampleHtml}=await import(pathToFileURL(process.cwd()+'/.sites-runtime/tests/core/demo.mjs'));
+ const {Workbench}=await import(pathToFileURL(process.cwd()+'/.sites-runtime/tests/application/workbench.mjs'));
+diff --git a/tests/identity.test.mjs b/tests/identity.test.mjs
+new file mode 100644
+index 0000000..0dcd4fe
+--- /dev/null
++++ b/tests/identity.test.mjs
+@@ -0,0 +1,62 @@
++import {test} from 'node:test';
++import assert from 'node:assert/strict';
++import {mkdtempSync,rmSync} from 'node:fs';
++import {tmpdir} from 'node:os';
++import {join} from 'node:path';
++import {once} from 'node:events';
++import {mentionsBrand} from '../dist/server/core/brand-matching.js';
++import {analyzeHtml,visibility,RUBRIC_VERSION} from '../dist/server/core/scoring.js';
++import {ClientIdentityService} from '../dist/server/application/client-identity.js';
++import {Workbench} from '../dist/server/application/workbench.js';
++import {SqliteRepository} from '../dist/server/server/sqlite-repository.js';
++import {settings,createWorkbenchServer} from '../dist/server/server/node-server.js';
++const c={id:'identity-client',name:'WorldFinancialgroup',domain:'https://www.worldfinancialgroup.com',industry:'Insurance',market:'United States',products:['Life insurance'],competitors:['Peer'],created:'2026-10-05T12:00:00Z'};
++const identity={name:'World Financial Group',brandAliases:['WFG','WorldFinancialgroup']};
++const ob={id:'saved-answer',clientId:c.id,created:c.created,source:'manual-import',engine:'fixture',surface:'fixture',model:'fixture',prompt:'Which life insurance providers are available?',response:'World Financial Group (WFG) is an option.',citations:[],observedAt:c.created};
++async function database(run){const dir=mkdtempSync(join(tmpdir(),'geo-identity-'));const repo=new SqliteRepository(dir);try{await repo.saveClient('alice',c);await run(repo,dir)}finally{repo.close();rmSync(dir,{recursive:true,force:true})}}
++
++test('brand identity recognizes canonical names and explicit aliases without substring or regex false positives',()=>{
++ const client={...c,...identity};
++ for(const text of ['world financial group','WORLD\n FINANCIAL\tGROUP','Choose WFG.','WorldFinancialgroup is an option.'])assert.equal(mentionsBrand(client,text),true,text);
++ for(const text of ['WFGrowth','XWFG','World Financial Grouper','No target brand here'])assert.equal(mentionsBrand(client,text),false,text);
++ assert.equal(mentionsBrand({...c,name:'A+B',brandAliases:['X.Y']},'Choose A+B and X.Y.'),true);
++ assert.equal(mentionsBrand({...c,name:'A+B',brandAliases:['X.Y']},'Choose AAAB and XZY.'),false);
++ assert.equal(mentionsBrand(c,'World Financial Group'),false);
++ assert.deepEqual(visibility(client,[{...ob,response:'World Financial Group, WFG, WorldFinancialgroup.'}]),{sample:1,mentionRate:100,citationRate:0});
++});
++
++test('new audit rubric uses visible brand aliases and keeps script/comment evidence excluded',()=>{
++ assert.equal(RUBRIC_VERSION,'readiness-cues/1.1.0');const client={...c,...identity};
++ assert.equal(analyzeHtml('<h1>WFG</h1>',client).find(d=>d.id==='entity').score,100);
++ assert.equal(analyzeHtml('<!--WFG--><script>World Financial Group</script><h1>Other company</h1>',client).find(d=>d.id==='entity').score,0);
++});
++
++test('identity updates preserve client fields, observations and immutable old audits while recalculating mention rates',async()=>database(async repo=>{
++ const app=new Workbench(repo);const oldAudit=await app.audit('alice',c.id,c.domain,'<h1>World Financial Group</h1>');await repo.saveRecords('alice',c.id,'observation',[ob]);
++ assert.equal((await app.detail('alice',c.id)).visibility.mentionRate,0);
++ const service=new ClientIdentityService(repo);const updated=await service.update('alice',c.id,{name:' World Financial Group ',brandAliases:[' WFG ','wfg','world financial group','WorldFinancialgroup']});
++ assert.deepEqual(updated.brandAliases,['WFG','WorldFinancialgroup']);assert.equal(updated.id,c.id);assert.equal(updated.created,c.created);assert.equal(updated.domain,c.domain);assert.deepEqual(updated.products,c.products);assert.deepEqual(updated.competitors,c.competitors);assert.ok(updated.updated);
++ const after=await app.detail('alice',c.id);assert.equal(after.visibility.mentionRate,100);assert.equal(after.visibility.citationRate,0);assert.deepEqual(after.observations,[ob]);assert.deepEqual(after.audits,[oldAudit]);assert.equal(oldAudit.dimensions.find(d=>d.id==='entity').score,0);
++ const next=await app.audit('alice',c.id,c.domain,'<h1>World Financial Group</h1>');assert.equal(next.dimensions.find(d=>d.id==='entity').score,100);assert.equal(next.version,'readiness-cues/1.1.0');
++}));
++
++test('identity edit denies another owner and missing client before mutating stored data',async()=>database(async repo=>{
++ const service=new ClientIdentityService(repo);await assert.rejects(service.update('bob',c.id,identity),/Client not found/);await assert.rejects(service.update('alice','missing',identity),/Client not found/);assert.deepEqual(await repo.getClient('alice',c.id),c);
++ assert.equal(await repo.updateIdentity('bob',c.id,identity,new Date().toISOString()),null);assert.deepEqual(await repo.getClient('alice',c.id),c);
++}));
++
++test('identity changes persist across SQLite reopen',async()=>database(async(repo,dir)=>{
++ await new ClientIdentityService(repo).update('alice',c.id,identity);const second=new SqliteRepository(dir);try{const saved=await second.getClient('alice',c.id);assert.equal(saved.name,identity.name);assert.deepEqual(saved.brandAliases,identity.brandAliases);assert.equal(await second.getClient('bob',c.id),null)}finally{second.close()}
++}));
++
++test('HTTP identity edit validates aliases, blocks other fields and origins, and preserves the existing evidence sample',async()=>{
++ const dir=mkdtempSync(join(tmpdir(),'geo-identity-http-'));const s=settings({GEO_DATA_DIR:dir});const {server,repo}=createWorkbenchServer(s);await repo.saveClient('local-admin',c);await repo.saveClient('other-owner',{...c,id:'other-client'});await repo.saveRecords('local-admin',c.id,'observation',[ob]);server.listen(0,'127.0.0.1');await once(server,'listening');const base='http://127.0.0.1:'+server.address().port;const path='/api/v1/clients/'+c.id+'/identity';
++ const post=(body,origin='http://localhost:5173')=>({method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify(body)});
++ try{
++  assert.equal((await fetch(base+path,post(identity,'https://other.example'))).status,403);
++  for(const bad of [{name:'x',brandAliases:[]},{...identity,brandAliases:Array(11).fill('WFG')},{...identity,domain:'https://other.example'},{...identity,brandAliases:['']}])assert.equal((await fetch(base+path,post(bad))).status,400);
++  assert.equal((await fetch(base+'/api/v1/clients/other-client/identity',post(identity))).status,404);
++  const result=await fetch(base+path,post(identity));assert.equal(result.status,200);assert.equal((await result.json()).id,c.id);
++  const detail=await(await fetch(base+'/api/v1/clients/'+c.id)).json();assert.equal(detail.visibility.sample,1);assert.equal(detail.visibility.mentionRate,100);assert.equal(detail.visibility.citationRate,0);assert.deepEqual(detail.observations,[ob]);
++ }finally{await new Promise(r=>server.close(r));repo.close();rmSync(dir,{recursive:true,force:true})}
++});
