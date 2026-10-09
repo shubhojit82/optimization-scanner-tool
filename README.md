@@ -1,6 +1,6 @@
-# GEO Workbench — standalone source v0.2.1
+# AI Search Intelligence — standalone source v0.3.0
 
-Complete first-stage GEO product source with a standalone Mac/Linux runtime. Start with [docs/SETUP.md](docs/SETUP.md), which includes local setup, cloud deployment and Git workflows.
+IBM AI Search Intelligence — evidence-based SEO, AEO and GEO readiness workbench for consulting teams. Complete source with a standalone Mac/Linux runtime. Start with [docs/SETUP.md](docs/SETUP.md), which includes local setup, cloud deployment and Git workflows.
 
 ## Updating your existing local installation
 

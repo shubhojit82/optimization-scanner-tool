@@ -351,7 +351,7 @@ ${kpiHtml}
 <div class="footer">
     Assessment based on page-level HTML analysis · Rubric ${esc(audit.version)} · ${audit.coverage}% rubric coverage<br>
     Scores reflect implementation cues only — not a ranking guarantee. Live AI visibility requires probe runs.<br>
-    Generated ${esc(generatedAt)} · GEO Workbench
+    Generated ${esc(generatedAt)} · AI Search Intelligence
 </div>
 
 </div>

@@ -28,3 +28,27 @@ export const smartPromptsSchema = z.object({
     provider: z.string().min(1).max(60),
     auditId: z.string().optional(),
 }).strict();
+
+export const customPromptsSchema = z.array(z.string().trim().min(5).max(2000)).max(50);
+
+export const contentfulFetchSchema = z.object({
+    entryId: z.string().trim().min(1).max(200),
+    clientId: z.string().uuid().optional(),
+    spaceId: z.string().trim().min(1).max(100).optional(),
+}).strict();
+
+export const scheduleSchema = z.object({
+    clientId: z.string().uuid(),
+    cadence: z.enum(['daily','weekly','monthly']),
+    providers: z.array(z.string().trim().min(1).max(60)).min(1).max(5),
+    prompts: z.array(z.string().trim().min(5).max(2000)).min(1).max(20),
+    enabled: z.boolean().optional(),
+}).strict();
+
+export const alertSchema = z.object({
+    clientId: z.string().uuid(),
+    metric: z.enum(['mentionRate','citationRate','score']),
+    threshold: z.number().min(0).max(100),
+    direction: z.enum(['below','above']),
+    enabled: z.boolean().optional(),
+}).strict();

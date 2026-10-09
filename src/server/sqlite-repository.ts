@@ -1,17 +1,15 @@
 import {DatabaseSync} from 'node:sqlite';
 import {mkdirSync} from 'node:fs';
 import {join} from 'node:path';
-import type {Client,Repository,Observation,ObservationLookup,ClientIdentity,ClientIdentityStore,ProbeRun} from '../core/contracts';
+import type {Client,Repository,Observation,ObservationLookup,ClientIdentity,ClientIdentityStore,ProbeRun,ProbeSchedule,Alert} from '../core/contracts';
 export class SqliteRepository implements Repository,ObservationLookup,ClientIdentityStore {
  readonly db:DatabaseSync;
  constructor(dir:string){mkdirSync(dir,{recursive:true});this.db=new DatabaseSync(join(dir,'geo.sqlite'));this.db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;');
  this.db.exec('CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY NOT NULL)');
- if(!this.db.prepare('SELECT version FROM schema_migrations WHERE version=1').get()){this.db.exec(`BEGIN IMMEDIATE;
- CREATE TABLE clients(id TEXT PRIMARY KEY NOT NULL,owner TEXT NOT NULL,data TEXT NOT NULL,created TEXT NOT NULL);
- CREATE INDEX idx_clients_owner_created ON clients(owner,created);
- CREATE TABLE records(id TEXT PRIMARY KEY NOT NULL,owner TEXT NOT NULL,client_id TEXT NOT NULL REFERENCES clients(id),kind TEXT NOT NULL,data TEXT NOT NULL,created TEXT NOT NULL);
- CREATE INDEX idx_records_owner_client_kind_created ON records(owner,client_id,kind,created);
- INSERT INTO schema_migrations(version) VALUES(1); COMMIT;`);}}
+ if(!this.db.prepare('SELECT version FROM schema_migrations WHERE version=1').get()){this.db.exec(`BEGIN IMMEDIATE;\nCREATE TABLE clients(id TEXT PRIMARY KEY NOT NULL,owner TEXT NOT NULL,data TEXT NOT NULL,created TEXT NOT NULL);\nCREATE INDEX idx_clients_owner_created ON clients(owner,created);\nCREATE TABLE records(id TEXT PRIMARY KEY NOT NULL,owner TEXT NOT NULL,client_id TEXT NOT NULL REFERENCES clients(id),kind TEXT NOT NULL,data TEXT NOT NULL,created TEXT NOT NULL);\nCREATE INDEX idx_records_owner_client_kind_created ON records(owner,client_id,kind,created);\nINSERT INTO schema_migrations(version) VALUES(1); COMMIT;`);}
+ if(!this.db.prepare('SELECT version FROM schema_migrations WHERE version=2').get()){this.db.exec(`BEGIN IMMEDIATE;\nCREATE TABLE schedules(id TEXT PRIMARY KEY NOT NULL,owner TEXT NOT NULL,client_id TEXT NOT NULL REFERENCES clients(id),cadence TEXT NOT NULL,providers TEXT NOT NULL,prompts TEXT NOT NULL,last_run_at TEXT,next_run_at TEXT NOT NULL,enabled INTEGER NOT NULL DEFAULT 1,created TEXT NOT NULL);\nCREATE INDEX idx_schedules_owner_next ON schedules(owner,next_run_at);\nINSERT INTO schema_migrations(version) VALUES(2); COMMIT;`);}
+ if(!this.db.prepare('SELECT version FROM schema_migrations WHERE version=3').get()){this.db.exec(`BEGIN IMMEDIATE;\nCREATE TABLE alerts(id TEXT PRIMARY KEY NOT NULL,owner TEXT NOT NULL,client_id TEXT NOT NULL REFERENCES clients(id),metric TEXT NOT NULL,threshold REAL NOT NULL,direction TEXT NOT NULL,last_triggered_at TEXT,enabled INTEGER NOT NULL DEFAULT 1,created TEXT NOT NULL);\nCREATE INDEX idx_alerts_owner_client ON alerts(owner,client_id);\nINSERT INTO schema_migrations(version) VALUES(3); COMMIT;`);}
+ }
  async listClients(owner:string){return (this.db.prepare('SELECT data FROM clients WHERE owner=? ORDER BY created DESC LIMIT 100').all(owner) as {data:string}[]).map(r=>JSON.parse(r.data) as Client)}
  async getClient(owner:string,id:string){const r=this.db.prepare('SELECT data FROM clients WHERE owner=? AND id=?').get(owner,id) as {data:string}|undefined;return r?JSON.parse(r.data) as Client:null}
  async saveClient(owner:string,c:Client){this.db.prepare('INSERT INTO clients(id,owner,data,created) VALUES(?,?,?,?)').run(c.id,owner,JSON.stringify(c),c.created)}
@@ -26,5 +24,20 @@ export class SqliteRepository implements Repository,ObservationLookup,ClientIden
  const row=this.db.prepare("UPDATE clients SET data=json_set(data,'$.name',?,'$.brandAliases',json(?),'$.updated',?) WHERE owner=? AND id=? RETURNING data").get(identity.name,JSON.stringify(identity.brandAliases),updatedAt,owner,clientId) as {data:string}|undefined;
  return row?JSON.parse(row.data) as Client:null;
  }
+ // Schedule CRUD
+ saveSchedule(s:ProbeSchedule){this.db.prepare('INSERT OR REPLACE INTO schedules(id,owner,client_id,cadence,providers,prompts,last_run_at,next_run_at,enabled,created) VALUES(?,?,?,?,?,?,?,?,?,?)').run(s.id,s.owner,s.clientId,s.cadence,JSON.stringify(s.providers),JSON.stringify(s.prompts),s.lastRunAt??null,s.nextRunAt,s.enabled?1:0,s.created)}
+ listSchedules(owner:string,clientId:string):ProbeSchedule[]{return (this.db.prepare('SELECT * FROM schedules WHERE owner=? AND client_id=?').all(owner,clientId) as {id:string;owner:string;client_id:string;cadence:string;providers:string;prompts:string;last_run_at:string|null;next_run_at:string;enabled:number;created:string}[]).map(r=>({id:r.id,owner:r.owner,clientId:r.client_id,cadence:r.cadence as ProbeSchedule['cadence'],providers:JSON.parse(r.providers),prompts:JSON.parse(r.prompts),lastRunAt:r.last_run_at??undefined,nextRunAt:r.next_run_at,enabled:r.enabled===1,created:r.created}))}
+ listDueSchedules():ProbeSchedule[]{const now=new Date().toISOString();return (this.db.prepare('SELECT * FROM schedules WHERE enabled=1 AND next_run_at<=?').all(now) as {id:string;owner:string;client_id:string;cadence:string;providers:string;prompts:string;last_run_at:string|null;next_run_at:string;enabled:number;created:string}[]).map(r=>({id:r.id,owner:r.owner,clientId:r.client_id,cadence:r.cadence as ProbeSchedule['cadence'],providers:JSON.parse(r.providers),prompts:JSON.parse(r.prompts),lastRunAt:r.last_run_at??undefined,nextRunAt:r.next_run_at,enabled:r.enabled===1,created:r.created}))}
+ updateScheduleRun(id:string,lastRunAt:string,nextRunAt:string){this.db.prepare('UPDATE schedules SET last_run_at=?,next_run_at=? WHERE id=?').run(lastRunAt,nextRunAt,id)}
+ deleteSchedule(owner:string,clientId:string):number{return (this.db.prepare('DELETE FROM schedules WHERE owner=? AND client_id=?').run(owner,clientId) as {changes:number}).changes}
+ // Alert CRUD
+ saveAlert(a:Alert){this.db.prepare('INSERT OR REPLACE INTO alerts(id,owner,client_id,metric,threshold,direction,last_triggered_at,enabled,created) VALUES(?,?,?,?,?,?,?,?,?)').run(a.id,a.owner,a.clientId,a.metric,a.threshold,a.direction,a.lastTriggeredAt??null,a.enabled?1:0,a.created)}
+ listAlerts(owner:string,clientId:string):Alert[]{return (this.db.prepare('SELECT * FROM alerts WHERE owner=? AND client_id=?').all(owner,clientId) as {id:string;owner:string;client_id:string;metric:string;threshold:number;direction:string;last_triggered_at:string|null;enabled:number;created:string}[]).map(r=>({id:r.id,owner:r.owner,clientId:r.client_id,metric:r.metric as Alert['metric'],threshold:r.threshold,direction:r.direction as Alert['direction'],lastTriggeredAt:r.last_triggered_at??undefined,enabled:r.enabled===1,created:r.created}))}
+ deleteAlert(owner:string,alertId:string):boolean{return (this.db.prepare('DELETE FROM alerts WHERE owner=? AND id=?').run(owner,alertId) as {changes:number}).changes>0}
+ updateAlertTriggered(id:string,at:string){this.db.prepare('UPDATE alerts SET last_triggered_at=? WHERE id=?').run(at,id)}
+ listEnabledAlerts(owner:string,clientId:string):Alert[]{return this.listAlerts(owner,clientId).filter(a=>a.enabled)}
+ // Custom prompts (stored as kind='custom-prompts' in records)
+ listCustomPrompts(owner:string,clientId:string):string[]{const r=this.db.prepare("SELECT data FROM records WHERE owner=? AND client_id=? AND kind='custom-prompts' ORDER BY created DESC LIMIT 1").get(owner,clientId) as {data:string}|undefined;return r?JSON.parse(r.data):[];}
+ saveCustomPrompts(owner:string,clientId:string,prompts:string[]):void{const created=new Date().toISOString();const id=crypto.randomUUID();this.db.exec('BEGIN IMMEDIATE');try{this.db.prepare("DELETE FROM records WHERE owner=? AND client_id=? AND kind='custom-prompts'").run(owner,clientId);this.db.prepare('INSERT INTO records(id,owner,client_id,kind,data,created) VALUES(?,?,?,?,?,?)').run(id,owner,clientId,'custom-prompts',JSON.stringify(prompts),created);this.db.exec('COMMIT')}catch(e){this.db.exec('ROLLBACK');throw e}}
  close(){this.db.close()}
 }

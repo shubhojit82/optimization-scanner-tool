@@ -12,13 +12,17 @@ import {ProbeRunner} from '../application/probe-runner';
 import {OpenAIProvider} from './providers/openai-provider';
 import {GeminiProvider} from './providers/gemini-provider';
 import {ClaudeProvider} from './providers/claude-provider';
+import {PerplexityProvider} from './providers/perplexity-provider';
 import {NodeCrawler} from './node-crawler';
 import {buildScanResult} from '../application/scanner';
 import {buildXlsx} from './xlsx-export';
 import {crawlSite} from './site-crawler';
 import {buildSiteXlsx} from './site-xlsx-export';
 import {CollectionError, type AIProvider, type ProviderInfo, type Audit, type CompetitorScanResult} from '../core/contracts';
-import {clientSchema,auditSchema,observationSchema,identitySchema,scanSchema,probeSchema,competitorScanSchema,benchmarkSchema,smartPromptsSchema} from '../adapters/validation';
+import {clientSchema,auditSchema,observationSchema,identitySchema,scanSchema,probeSchema,competitorScanSchema,benchmarkSchema,smartPromptsSchema,customPromptsSchema,contentfulFetchSchema,scheduleSchema,alertSchema} from '../adapters/validation';
+import {Scheduler} from './scheduler';
+import {ContentfulConnector} from './cms/contentful-connector';
+import {BrowserCrawler} from './browser-crawler';
 import {buildFullReport} from '../core/report-analysis';
 import {buildHtmlReport} from './html-report';
 import {buildExecSummaryReport} from './exec-summary-report';
@@ -26,7 +30,7 @@ import {analyzeHtml,aggregate,subScores} from '../core/scoring';
 import {ScanCache} from './scan-cache';
 import {ContentBriefService} from '../application/content-brief';
 import {SmartPromptsService} from '../application/smart-prompts';
-export type Settings={mode:'local'|'basic';bind:string;port:number;dataDir:string;origins:string[];username:string;password:string;clientDir:string;openaiKey?:string;openaiModel?:string;geminiKey?:string;geminiModel?:string;claudeKey?:string;claudeModel?:string};
+export type Settings={mode:'local'|'basic';bind:string;port:number;dataDir:string;origins:string[];username:string;password:string;viewerPassword?:string;clientDir:string;openaiKey?:string;openaiModel?:string;geminiKey?:string;geminiModel?:string;claudeKey?:string;claudeModel?:string;perplexityKey?:string;perplexityModel?:string;contentfulSpaceId?:string;contentfulToken?:string;useBrowser?:boolean};
 export function settings(e:NodeJS.ProcessEnv=process.env):Settings {
  const mode=e.GEO_AUTH_MODE||'local';if(mode!=='local'&&mode!=='basic')throw new Error('GEO_AUTH_MODE must be local or basic');
  const bind=e.GEO_BIND||(mode==='local'?'127.0.0.1':'0.0.0.0');
@@ -36,10 +40,14 @@ export function settings(e:NodeJS.ProcessEnv=process.env):Settings {
  if(mode==='basic'&&(!username||username.includes(':')||password.length<16||password.includes('REPLACE_')))throw new Error('Basic authentication requires a username and a unique password of at least 16 characters');
  const origins=(e.GEO_ALLOWED_ORIGINS||'http://localhost:5173,http://127.0.0.1:5173,http://localhost:8080,http://127.0.0.1:8080').split(',').map(s=>s.trim()).filter(Boolean);
  for(const o of origins){const u=new URL(o);if(u.origin!==o||!['http:','https:'].includes(u.protocol))throw new Error('Allowed origins must be exact HTTP(S) origins')}
- return {mode,bind,port,dataDir:resolve(e.GEO_DATA_DIR||'data'),origins,username,password,clientDir:resolve('dist/client'),openaiKey:e.OPENAI_API_KEY?.trim()||undefined,openaiModel:e.GEO_OPENAI_MODEL?.trim()||'gpt-4o-mini',geminiKey:e.GEMINI_API_KEY?.trim()||undefined,geminiModel:e.GEO_GEMINI_MODEL?.trim()||'gemini-3.8-flash',claudeKey:e.ANTHROPIC_API_KEY?.trim()||undefined,claudeModel:e.GEO_CLAUDE_MODEL?.trim()||'claude-opus-4-5-20251101'};
+ const viewerPassword=e.GEO_VIEWER_PASSWORD?.trim()||undefined;
+ if(mode==='basic'&&viewerPassword&&password&&equal(viewerPassword,password))throw new Error('GEO_VIEWER_PASSWORD must differ from GEO_ADMIN_PASSWORD');
+ return {mode,bind,port,dataDir:resolve(e.GEO_DATA_DIR||'data'),origins,username,password,viewerPassword,clientDir:resolve('dist/client'),openaiKey:e.OPENAI_API_KEY?.trim()||undefined,openaiModel:e.GEO_OPENAI_MODEL?.trim()||'gpt-4o-mini',geminiKey:e.GEMINI_API_KEY?.trim()||undefined,geminiModel:e.GEO_GEMINI_MODEL?.trim()||'gemini-3.8-flash',claudeKey:e.ANTHROPIC_API_KEY?.trim()||undefined,claudeModel:e.GEO_CLAUDE_MODEL?.trim()||'claude-opus-4-5-20251101',perplexityKey:e.PERPLEXITY_API_KEY?.trim()||undefined,perplexityModel:e.GEO_PERPLEXITY_MODEL?.trim()||'sonar',contentfulSpaceId:e.CONTENTFUL_SPACE_ID?.trim()||undefined,contentfulToken:e.CONTENTFUL_ACCESS_TOKEN?.trim()||undefined,useBrowser:e.GEO_USE_BROWSER==='true'};
 }
 function equal(a:string,b:string){return timingSafeEqual(createHash('sha256').update(a).digest(),createHash('sha256').update(b).digest())}
-function authenticated(req:IncomingMessage,s:Settings){if(s.mode==='local')return true;const a=req.headers.authorization;if(!a||!a.startsWith('Basic '))return false;let decoded:string;try{decoded=Buffer.from(a.slice(6),'base64').toString('utf8')}catch{return false}return equal(decoded,s.username+':'+s.password)}
+function decodeBasic(req:IncomingMessage):{ok:boolean;creds:string}{const a=req.headers.authorization;if(!a||!a.startsWith('Basic '))return{ok:false,creds:''};try{return{ok:true,creds:Buffer.from(a.slice(6),'base64').toString('utf8')}}catch{return{ok:false,creds:''}}}
+function authenticated(req:IncomingMessage,s:Settings){if(s.mode==='local')return true;const{ok,creds}=decodeBasic(req);if(!ok)return false;return equal(creds,s.username+':'+s.password)}
+function isViewer(req:IncomingMessage,s:Settings):boolean{if(!s.viewerPassword||s.mode!=='basic')return false;const{ok,creds}=decodeBasic(req);if(!ok)return false;return equal(creds,s.username+':'+s.viewerPassword)}
 function json(res:ServerResponse,status:number,data:unknown){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(data))}
 async function body(req:IncomingMessage){const chunks:Buffer[]=[];let bytes=0;for await(const chunk of req){const b=Buffer.from(chunk);bytes+=b.length;if(bytes>600000)throw new Error('Request too large');chunks.push(b)}return JSON.parse(Buffer.concat(chunks).toString('utf8'))}
 export function createWorkbenchServer(s:Settings, supplied?:{providers:Map<string,AIProvider>;info:ProviderInfo[]}){const repo=new SqliteRepository(s.dataDir);const app=new Workbench(repo);
@@ -47,15 +55,20 @@ export function createWorkbenchServer(s:Settings, supplied?:{providers:Map<strin
  if(!supplied&&s.openaiKey)providers.set('openai',new OpenAIProvider(s.openaiKey,s.openaiModel));
  if(!supplied&&s.geminiKey)providers.set('gemini',new GeminiProvider(s.geminiKey,s.geminiModel));
  if(!supplied&&s.claudeKey)providers.set('claude',new ClaudeProvider(s.claudeKey,s.claudeModel));
+ if(!supplied&&s.perplexityKey)providers.set('perplexity',new PerplexityProvider(s.perplexityKey,s.perplexityModel));
  const info=supplied?.info||[
    {id:'openai',label:'OpenAI web search',model:s.openaiModel||'gpt-4o-mini',configured:!!s.openaiKey},
    {id:'gemini',label:'Google Gemini grounded search',model:s.geminiModel||'gemini-3.8-flash',configured:!!s.geminiKey},
    {id:'claude',label:'Anthropic Claude web search',model:s.claudeModel||'claude-opus-4-5-20251101',configured:!!s.claudeKey},
+   {id:'perplexity',label:'Perplexity Sonar web search',model:s.perplexityModel||'sonar',configured:!!s.perplexityKey},
  ];
  const runner=new ObservationRunner(repo,providers);
  const probeRunner=new ProbeRunner(providers);
  const identities=new ClientIdentityService(repo);
  const crawler=new NodeCrawler(25000);
+ const browserCrawler=s.useBrowser?new BrowserCrawler():null;
+ const contentfulConnector=s.contentfulSpaceId&&s.contentfulToken?new ContentfulConnector(s.contentfulSpaceId,s.contentfulToken):null;
+ const scheduler=new Scheduler(repo,probeRunner);scheduler.start();
  // 5-minute TTL, 50-entry LRU caches — avoids redundant HTTP fetches
  const snapCache=new ScanCache<Awaited<ReturnType<NodeCrawler['captureWithFlags']>>>(5*60*1000,50);
  const competitorCache=new ScanCache<CompetitorScanResult>(5*60*1000,50);
@@ -66,7 +79,8 @@ export function createWorkbenchServer(s:Settings, supplied?:{providers:Map<strin
  const runSchema=z.object({provider:z.string().min(1).max(60),prompt:z.string().trim().min(5).max(2000),requestId:z.string().uuid()}).strict();
  const server=createServer(async(req,res)=>{res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','same-origin');res.setHeader('X-Frame-Options','DENY');
  if(s.mode==='local'){let h='';try{h=new URL('http://'+(req.headers.host||'')).hostname}catch{}if(!['127.0.0.1','localhost','[::1]'].includes(h))return json(res,403,{error:'Host denied'})}
- if(!authenticated(req,s)){res.setHeader('WWW-Authenticate','Basic realm="GEO Workbench", charset="UTF-8"');return json(res,401,{error:'Sign in required'})}
+ const viewerOnly=!authenticated(req,s)&&isViewer(req,s);
+ if(!authenticated(req,s)&&!viewerOnly){res.setHeader('WWW-Authenticate','Basic realm="AI Search Intelligence", charset="UTF-8"');return json(res,401,{error:'Sign in required'})}
  // Identity comes only from configured authentication. Client identity headers are ignored.
  const owner=s.username;
  let path:string;try{path=new URL(req.url||'/', 'http://app.internal').pathname}catch{return json(res,400,{error:'Invalid URL'})}
@@ -74,6 +88,8 @@ export function createWorkbenchServer(s:Settings, supplied?:{providers:Map<strin
  if(path.startsWith('/api/')){
  if(!['GET','POST','DELETE'].includes(req.method||''))return json(res,405,{error:'Method not allowed'});
  if(['POST','DELETE'].includes(req.method||'')&&!s.origins.includes(req.headers.origin||''))return json(res,403,{error:'Origin denied'});
+ if(viewerOnly&&['POST','DELETE'].includes(req.method||''))return json(res,403,{error:'Read-only mode'});
+ if(path==='/api/v1/session')return req.method==='GET'?json(res,200,{readOnly:viewerOnly,username:s.username}):json(res,405,{error:'Method not allowed'});
  if(path==='/api/v1/providers')return req.method==='GET'?json(res,200,info):json(res,405,{error:'Method not allowed'});
  const identityMatch=path.match(/^\/api\/v1\/clients\/([^/]+)\/identity$/);
  if(identityMatch){if(req.method!=='POST')return json(res,405,{error:'Method not allowed'});const input=identitySchema.parse(await body(req));return json(res,200,await identities.update(owner,decodeURIComponent(identityMatch[1]),input));}
@@ -175,7 +191,7 @@ export function createWorkbenchServer(s:Settings, supplied?:{providers:Map<strin
    if(!client)return json(res,404,{error:'Client not found'});
    const run=await probeRunner.runProbes(client,prompts,pids);
    // Persist for history/trend tracking (best-effort — don't fail the response)
-   try{await repo.saveProbeRun(owner,clientId,run)}catch(e){console.error('probe-run save failed',e)}
+   try{await repo.saveProbeRun(owner,clientId,run);const alerts=repo.listEnabledAlerts(owner,clientId);const now=new Date().toISOString();for(const a of alerts){const v=a.metric==='mentionRate'?run.mentionRate:a.metric==='citationRate'?run.citationRate:null;if(v===null)continue;const triggered=a.direction==='below'?v<a.threshold:v>a.threshold;if(triggered)repo.updateAlertTriggered(a.id,now);}}catch(e){console.error('probe-run save failed',e)}
    return json(res,200,run);
  }
  const probeHistoryMatch=path.match(/^\/api\/v1\/probe-history\/([^/]+)$/);
@@ -245,6 +261,19 @@ export function createWorkbenchServer(s:Settings, supplied?:{providers:Map<strin
    try{const brief=await briefService.generate(client,audit,providerId);return json(res,200,brief);}
    catch(e){const msg=e instanceof Error?e.message:'Generation failed';console.error('content-brief failed',e);return json(res,502,{error:msg});}
  }
+ // Custom prompts endpoints
+ const promptsMatch=path.match(/^\/api\/v1\/clients\/([^/]+)\/prompts$/);
+ if(promptsMatch){const cId=decodeURIComponent(promptsMatch[1]);if(req.method==='GET')return json(res,200,repo.listCustomPrompts(owner,cId));if(req.method==='POST'){const prompts=customPromptsSchema.parse(await body(req));repo.saveCustomPrompts(owner,cId,prompts);return json(res,200,{saved:prompts.length});}return json(res,405,{error:'Method not allowed'});}
+ // Schedule endpoints
+ const schedMatch=path.match(/^\/api\/v1\/schedules\/([^/]+)$/);
+ if(path==='/api/v1/schedules'&&req.method==='POST'){const b=scheduleSchema.parse(await body(req));const client=await repo.getClient(owner,b.clientId);if(!client)return json(res,404,{error:'Client not found'});const now=new Date();const cd=b.cadence;const next=cd==='daily'?new Date(now.getTime()+86400000):cd==='weekly'?new Date(now.getTime()+7*86400000):new Date(now.getFullYear(),now.getMonth()+1,now.getDate());const s2={id:crypto.randomUUID(),owner,clientId:b.clientId,cadence:b.cadence,providers:b.providers,prompts:b.prompts,nextRunAt:next.toISOString(),enabled:b.enabled??true,created:now.toISOString()};repo.saveSchedule(s2);return json(res,200,s2);}
+ if(schedMatch){const cId=decodeURIComponent(schedMatch[1]);if(req.method==='GET')return json(res,200,repo.listSchedules(owner,cId));if(req.method==='DELETE'){const n=repo.deleteSchedule(owner,cId);return json(res,200,{deleted:n});}return json(res,405,{error:'Method not allowed'});}
+ // Alert endpoints
+ const alertMatch=path.match(/^\/api\/v1\/alerts\/([^/]+)$/);
+ if(path==='/api/v1/alerts'&&req.method==='POST'){const b=alertSchema.parse(await body(req));const client=await repo.getClient(owner,b.clientId);if(!client)return json(res,404,{error:'Client not found'});const al={id:crypto.randomUUID(),owner,clientId:b.clientId,metric:b.metric,threshold:b.threshold,direction:b.direction,enabled:b.enabled??true,created:new Date().toISOString()};repo.saveAlert(al);return json(res,200,al);}
+ if(alertMatch){const cId=decodeURIComponent(alertMatch[1]);if(req.method==='GET')return json(res,200,repo.listAlerts(owner,cId));if(req.method==='DELETE'&&path.match(/\/alerts\/[^/]+\/[^/]+$/)){const aId=path.split('/').at(-1)!;const ok=repo.deleteAlert(owner,decodeURIComponent(aId));return json(res,ok?200:404,ok?{deleted:aId}:{error:'Alert not found'});}return json(res,405,{error:'Method not allowed'});}
+ // Contentful endpoint
+ if(path==='/api/v1/cms/contentful/fetch'&&req.method==='POST'){if(!contentfulConnector)return json(res,503,{error:'Contentful not configured. Set CONTENTFUL_SPACE_ID and CONTENTFUL_ACCESS_TOKEN.'});const b=contentfulFetchSchema.parse(await body(req));const spaceId=b.spaceId;if(spaceId){const alt=new ContentfulConnector(spaceId,s.contentfulToken!);const snap=await alt.readPage(b.entryId);return json(res,200,snap);}const snap=await contentfulConnector.readPage(b.entryId);return json(res,200,snap);}
  return json(res,404,{error:'Endpoint not found'});
  }
  if(req.method!=='GET'&&req.method!=='HEAD')return json(res,405,{error:'Method not allowed'});

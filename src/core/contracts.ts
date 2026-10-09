@@ -178,3 +178,28 @@ export type ClientIdentity = {name: string; brandAliases: string[]};
 export interface ClientIdentityStore {
     updateIdentity(owner: string, clientId: string, identity: ClientIdentity, updatedAt: string): Promise<Client | null>;
 }
+
+export type ProbeSchedule = {
+    id: string;
+    clientId: string;
+    owner: string;
+    cadence: 'daily' | 'weekly' | 'monthly';
+    providers: string[];
+    prompts: string[];
+    lastRunAt?: string;
+    nextRunAt: string;
+    enabled: boolean;
+    created: string;
+};
+
+export type Alert = {
+    id: string;
+    clientId: string;
+    owner: string;
+    metric: 'mentionRate' | 'citationRate' | 'score';
+    threshold: number;
+    direction: 'below' | 'above';
+    lastTriggeredAt?: string;
+    enabled: boolean;
+    created: string;
+};
