@@ -227,7 +227,7 @@ export function analyzeHtml(html: string, c: Client): Dimension[] {
         ({id, name, weight, score, evidence, action, details});
 
     return [
-        dd('crawl', 'Crawler access', 15, null,
+        dd('crawl', 'Crawler access', 10, null,
             'Imported HTML cannot establish robots rules, WAF access, or indexing.',
             'Use the Scanner tab to fetch the live URL. It checks robots.txt, WAF, and HTTP status automatically.',
             {
@@ -271,7 +271,7 @@ export function analyzeHtml(html: string, c: Client): Dimension[] {
                 }
             }),
 
-        dd('entity', 'Brand clarity', 15, brandFound ? 100 : 0,
+        dd('entity', 'Brand clarity', 12, brandFound ? 100 : 0,
             `Brand name or alias ${brandFound ? 'found' : 'not found'} in visible text.`,
             'Name the brand explicitly in the opening paragraph. List what the brand does and who it serves.',
             {
@@ -317,7 +317,7 @@ export function analyzeHtml(html: string, c: Client): Dimension[] {
                 }
             }),
 
-        dd('evidence', 'Reference cues', 15, externalLinks.length ? 100 : 0,
+        dd('evidence', 'Reference cues', 12, externalLinks.length ? 100 : 0,
             `${externalLinks.length} external reference link(s). Sources and claims have not been verified.`,
             'Support material claims with relevant, verifiable references from authoritative external sources.',
             {
@@ -648,7 +648,7 @@ export function analyzeHtml(html: string, c: Client): Dimension[] {
                 const hit = cue.patterns.some(p => p.test(visible));
                 return item(cue.label, hit ? 'Detected in page text' : 'Not found', hit ? 'ok' : 'warn');
             });
-            return dd('reasoning-cues', 'Reasoning Cues', 4, score,
+            return dd('reasoning-cues', 'Reasoning Cues', 3, score,
                 `${foundCues.length}/${CUES.length} reasoning cue types detected: ${foundCues.join(', ') || 'none'}.`,
                 'Add explicit reasoning signals: step-by-step sequences, summary callouts, definitions, examples, comparisons, and warnings. These help LLMs extract and cite your content.',
                 {
@@ -696,7 +696,7 @@ export function analyzeHtml(html: string, c: Client): Dimension[] {
             const passageScore = total === 0 ? 0 : Math.round(goodPassages / total * 100);
             const formatBonus = [hasFaq, hasLists, hasTables].filter(Boolean).length * 8;
             const score = Math.min(100, passageScore + formatBonus);
-            return dd('passage-density', 'Passage Density', 4, total === 0 ? null : score,
+            return dd('passage-density', 'Passage Density', 3, total === 0 ? null : score,
                 `${goodPassages}/${total} paragraphs are well-sized (15–240 words); ${tooShort} too short, ${tooLong} too long. FAQ: ${hasFaq ? 'yes' : 'no'}, Lists: ${hasLists ? 'yes' : 'no'}, Tables: ${hasTables ? 'yes' : 'no'}.`,
                 'Structure content as 100–300 token self-contained passages. Add FAQ sections (Q+A format), bullet lists, and comparison tables. Each block should stand alone so LLMs can extract and cite it.',
                 {

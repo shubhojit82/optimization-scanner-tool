@@ -37,7 +37,7 @@ test('identity updates preserve client fields, observations and immutable old au
  const service=new ClientIdentityService(repo);const updated=await service.update('alice',c.id,{name:' World Financial Group ',brandAliases:[' WFG ','wfg','world financial group','WorldFinancialgroup']});
  assert.deepEqual(updated.brandAliases,['WFG','WorldFinancialgroup']);assert.equal(updated.id,c.id);assert.equal(updated.created,c.created);assert.equal(updated.domain,c.domain);assert.deepEqual(updated.products,c.products);assert.deepEqual(updated.competitors,c.competitors);assert.ok(updated.updated);
  const after=await app.detail('alice',c.id);assert.equal(after.visibility.mentionRate,100);assert.equal(after.visibility.citationRate,0);assert.deepEqual(after.observations,[ob]);assert.deepEqual(after.audits,[oldAudit]);assert.equal(oldAudit.dimensions.find(d=>d.id==='entity').score,0);
- const next=await app.audit('alice',c.id,c.domain,'<h1>World Financial Group</h1>');assert.equal(next.dimensions.find(d=>d.id==='entity').score,100);assert.equal(next.version,'readiness-cues/1.1.0');
+ const next=await app.audit('alice',c.id,c.domain,'<h1>World Financial Group</h1><p>Identity updated.</p>');assert.equal(next.dimensions.find(d=>d.id==='entity').score,100);assert.equal(next.version,'readiness-cues/1.1.0');
 }));
 
 test('identity edit denies another owner and missing client before mutating stored data',async()=>database(async repo=>{
