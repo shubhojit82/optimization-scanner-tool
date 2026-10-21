@@ -285,10 +285,10 @@ export function ExecSummaryPanel({ client, audits, observations }: Props) {
                 </section>
             )}
 
-            {/* ── IBM 5-pillar readiness ── */}
+            {/* ── GEO readiness pillars ── */}
             <section className="panel">
                 <div className="panel-heading">
-                    <div><h2>IBM 5-Pillar Readiness</h2><p>Score contribution per IBM GEO framework pillar — all 5 pillars shown; unmeasured pillars shown with dashes</p></div>
+                    <div><h2>GEO Readiness Pillars</h2><p>Score contribution per GEO readiness framework pillar — all 5 pillars shown; unmeasured pillars shown with dashes</p></div>
                 </div>
                 <div style={{ padding: '8px 24px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
                     {(['AI Visibility', 'Technical AI Optimization', 'Content Analysis', 'Sentiment & Reputation', 'AI-era KPIs'] as const).map(pillar => {

@@ -1,0 +1,456 @@
+
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>GEO Workbench — Feature Guide</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "Segoe UI", system-ui, sans-serif; font-size: 14px; line-height: 1.6; background: #ffffff; color: #1f2328; }
+  .page { max-width: 760px; margin: 0 auto; padding: 48px 24px 64px; }
+
+  /* Header */
+  .header { border-bottom: 2px solid #e5e7eb; padding-bottom: 28px; margin-bottom: 36px; }
+  .eyebrow { font-size: 10px; font-weight: 700; letter-spacing: .12em; color: #3b82d4; text-transform: uppercase; margin-bottom: 8px; }
+  .header h1 { font-size: 26px; font-weight: 700; color: #1f2328; line-height: 1.25; margin-bottom: 8px; }
+  .header p { color: #57606a; font-size: 14px; max-width: 580px; }
+  .version-badge { display: inline-block; margin-top: 12px; padding: 3px 10px; background: #f7f8fa; border: 1px solid #e5e7eb; font-size: 11px; color: #57606a; font-weight: 600; letter-spacing: .04em; }
+
+  /* Score legend */
+  .score-legend { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 36px; }
+  .score-pill { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border: 1px solid #e5e7eb; background: #f7f8fa; font-size: 12px; font-weight: 600; }
+  .score-pill .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .seo-dot { background: #0f62fe; }
+  .aeo-dot { background: #8a3ffc; }
+  .geo-dot { background: #009d9a; }
+  .score-pill span { color: #57606a; font-weight: 400; }
+
+  /* Section headers */
+  .section-title { font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: #57606a; padding: 0 0 8px; border-bottom: 1px solid #e5e7eb; margin: 40px 0 20px; }
+
+  /* Feature cards */
+  .feature { margin-bottom: 20px; border: 1px solid #e5e7eb; }
+  .feature-header { display: flex; align-items: flex-start; gap: 14px; padding: 16px 18px 14px; background: #f7f8fa; cursor: default; }
+  .feature-icon { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 16px; background: #ffffff; border: 1px solid #e5e7eb; }
+  .feature-title-group { flex: 1; }
+  .feature-name { font-size: 14px; font-weight: 700; color: #1f2328; }
+  .feature-tagline { font-size: 12px; color: #57606a; margin-top: 2px; }
+  .feature-badge { font-size: 10px; font-weight: 700; letter-spacing: .06em; padding: 2px 7px; border: 1px solid; text-transform: uppercase; flex-shrink: 0; margin-top: 2px; }
+  .badge-done { color: #1a7f37; border-color: #aef0c8; background: #d1fadf; }
+  .badge-partial { color: #9a6700; border-color: #fde68a; background: #fef9c3; }
+  .feature-body { padding: 14px 18px; }
+  .feature-body p { color: #1f2328; font-size: 13.5px; line-height: 1.65; margin-bottom: 10px; }
+  .feature-body p:last-child { margin-bottom: 0; }
+
+  /* How it works steps */
+  .steps { margin: 12px 0 0; padding: 0; list-style: none; }
+  .steps li { display: flex; gap: 10px; font-size: 12.5px; color: #57606a; padding: 5px 0; border-bottom: 1px solid #f0f0f0; }
+  .steps li:last-child { border-bottom: none; }
+  .step-num { width: 18px; height: 18px; background: #1f2328; color: #fff; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px; }
+  .step-text strong { color: #1f2328; }
+
+  /* Env table */
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 8px; }
+  th { background: #f7f8fa; text-align: left; padding: 7px 10px; font-weight: 600; color: #57606a; border: 1px solid #e5e7eb; }
+  td { padding: 6px 10px; border: 1px solid #e5e7eb; color: #1f2328; vertical-align: top; }
+  td code { font-family: "SF Mono", "Fira Code", monospace; font-size: 11.5px; background: #f7f8fa; padding: 1px 4px; border: 1px solid #e5e7eb; }
+  .td-default { color: #57606a; font-size: 11.5px; }
+
+  /* Tip box */
+  .tip { background: #f0f7ff; border-left: 3px solid #3b82d4; padding: 10px 14px; font-size: 12.5px; color: #1f2328; margin-top: 12px; }
+  .tip strong { color: #3b82d4; }
+
+  /* Workflow arrow list */
+  .workflow { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 10px; align-items: center; }
+  .wf-step { background: #1f2328; color: #fff; font-size: 11px; font-weight: 600; padding: 4px 10px; letter-spacing: .03em; }
+  .wf-arrow { color: #57606a; font-size: 14px; font-weight: 300; }
+
+  /* Footer */
+  .page-footer { margin-top: 56px; padding-top: 20px; border-top: 1px solid #e5e7eb; text-align: center; font-size: 12px; color: #57606a; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="header">
+    <div class="eyebrow">IBM Consulting Workspace</div>
+    <h1>AI Search Intelligence — Feature Guide</h1>
+    <p>Complete reference for every tab and capability in the GEO Workbench. All features are evidence-based — no black-box scoring.</p>
+    <div class="version-badge">v0.3 · Portable edition</div>
+  </div>
+
+  
+  <div class="score-legend">
+    <div class="score-pill"><span class="dot seo-dot"></span><strong>SEO</strong> <span>Search Engine Optimisation — crawlability &amp; page structure</span></div>
+    <div class="score-pill"><span class="dot aeo-dot"></span><strong>AEO</strong> <span>Answer Engine Optimisation — content &amp; entity signals</span></div>
+    <div class="score-pill"><span class="dot geo-dot"></span><strong>GEO</strong> <span>Generative Engine Optimisation — AI visibility &amp; monitoring</span></div>
+  </div>
+
+  
+  <div class="section-title">Setup &amp; client management</div>
+
+  <div class="feature">
+    <div class="feature-header">
+      <div class="feature-icon">＋</div>
+      <div class="feature-title-group">
+        <div class="feature-name">Add Client</div>
+        <div class="feature-tagline">The unit of all analysis — one client = one brand + domain</div>
+      </div>
+      <span class="feature-badge badge-done">Implemented</span>
+    </div>
+    <div class="feature-body">
+      <p>Create a client by supplying brand name, domain, industry, target market, up to 10 products/services, and up to 5 competitor brands. All scoring, probing, and observation tracking is scoped to a single authenticated owner — no data crosses clients.</p>
+      <ul class="steps">
+        <li><span class="step-num">1</span><span class="step-text"><strong>Add client</strong> — top-right button, fill in the form</span></li>
+        <li><span class="step-num">2</span><span class="step-text"><strong>Edit client / Brand identity</strong> — update name, add brand aliases (e.g. "WFG") so mention matching covers all known names</span></li>
+        <li><span class="step-num">3</span><span class="step-text"><strong>Import page</strong> — paste page HTML to establish the first readiness baseline</span></li>
+        <li><span class="step-num">4</span><span class="step-text"><strong>Delete client</strong> — two-click confirmation, permanently removes all audits, observations, and probe runs</span></li>
+      </ul>
+    </div>
+  </div>
+
+  
+  <div class="section-title">Page analysis</div>
+
+  <div class="feature">
+    <div class="feature-header">
+      <div class="feature-icon">📊</div>
+      <div class="feature-title-group">
+        <div class="feature-name">Overview — Client Readiness</div>
+        <div class="feature-tagline">Composite SEO / AEO / GEO score with per-dimension breakdown and priority actions</div>
+      </div>
+      <span class="feature-badge badge-done">Implemented</span>
+    </div>
+    <div class="feature-body">
+      <p>The main view. Shows the weighted readiness score (0–100) across all assessed dimensions, the rubric coverage %, and three sub-scores. Click any sub-score ring (SEO / AEO / GEO) to drill into a full page-by-page breakdown with findings and how-to-fix guidance.</p>
+      <p><strong>Priority actions</strong> — dimensions ordered by weighted gap (weight × (100 − score)), so the highest-impact missing cues always appear first. Each action includes traceable evidence from the HTML.</p>
+      <p><strong>Evidence ledger</strong> — full history of audits. Click any row for the dimension detail. Export as HTML report, PDF (print dialog), or JSON.</p>
+      <div class="tip"><strong>Note:</strong> Score = sum(weight × score) ÷ assessed weight. Dimensions with <em>null</em> scores are excluded from the average but reduce rubric coverage. High scores do not guarantee ranking or AI visibility.</div>
+    </div>
+  </div>
+
+  <div class="feature">
+    <div class="feature-header">
+      <div class="feature-icon">🔍</div>
+      <div class="feature-title-group">
+        <div class="feature-name">Scanner</div>
+        <div class="feature-tagline">Scan any public URL without pasting HTML — live HTTP fetch + instant GEO readiness report</div>
+      </div>
+      <span class="feature-badge badge-done">Implemented</span>
+    </div>
+    <div class="feature-body">
+      <p>Enter any public URL; the server fetches it with a Node HTTP crawler (or headless browser if <code>GEO_USE_BROWSER=true</code>). Returns the full dimension breakdown, SEO/AEO/GEO sub-scores, and flagged findings immediately. Results are cached for 5 minutes to avoid duplicate fetches.</p>
+      <ul class="steps">
+        <li><span class="step-num">1</span><span class="step-text">Paste URL → <strong>Scan</strong></span></li>
+        <li><span class="step-num">2</span><span class="step-text">Review findings → <strong>Save to client</strong> to persist the audit (deduplicates by hash+url)</span></li>
+        <li><span class="step-num">3</span><span class="step-text"><strong>Export XLSX</strong> — full GEO readiness report in spreadsheet format</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="feature">
+    <div class="feature-header">
+      <div class="feature-icon">🗺️</div>
+      <div class="feature-title-group">
+        <div class="feature-name">Site Crawler</div>
+        <div class="feature-tagline">Discover and score multiple pages from a single domain automatically</div>
+      </div>
+      <span class="feature-badge badge-done">Implemented</span>
+    </div>
+    <div class="feature-body">
+      <p>Enter a root URL and the crawler discovers pages via sitemap.xml or internal link traversal. Each page is scored against the full GEO rubric. Returns a ranked list with per-page SEO/AEO/GEO sub-scores and top gaps, plus an XLSX export of the full site report.</p>
+    </div>
+  </div>
+
+  <div class="feature">
+    <div class="feature-header">
+      <div class="feature-icon">📈</div>
+      <div class="feature-title-group">
+        <div class="feature-name">Progress</div>
+        <div class="feature-tagline">Before-and-after dimension comparison across any two saved audits</div>
+      </div>
+      <span class="feature-badge badge-done">Implemented</span>
+    </div>
+    <div class="feature-body">
+      <p>Select any two audits from the client history. Shows delta per dimension — green for improvements, red for regressions. Answers the question: <em>"Did the fix actually land?"</em></p>
+    </div>
+  </div>
+
+  
+  <div class="section-title">AI visibility &amp; probing</div>
+
+  <div class="feature">
+    <div class="feature-header">
+      <div class="feature-icon">⚡</div>
+      <div class="feature-title-group">
+        <div class="feature-name">AI Visibility</div>
+        <div class="feature-tagline">Fire prompts at live AI engines — measure brand mention rate, sentiment, share-of-voice</div>
+      </div>
+      <span class="feature-badge badge-done">Implemented</span>
+    </div>
+    <div class="feature-body">
+      <p>Runs a set of prompts against one or more configured AI providers (OpenAI, Gemini, Claude, Perplexity). For each response it measures: brand mentioned (yes/no), sentiment (positive / neutral / negative / absent), whether the client domain was cited, and which competitors appeared.</p>
+      <p>Aggregates into: <strong>Mention Rate</strong>, <strong>Citation Rate</strong>, <strong>Sentiment Breakdown</strong>, <strong>Share of Voice</strong> vs each competitor, and <strong>Top Citing Domains</strong>.</p>
+      <div class="tip"><strong>Requires:</strong> At least one API key in <code>.env</code> — <code>OPENAI_API_KEY</code>, <code>GEMINI_API_KEY</code>, <code>ANTHROPIC_API_KEY</code>, or <code>PERPLEXITY_API_KEY</code>.</div>
+    </div>
+  </div>
+
+  <div class="feature">
+    <div class="feature-header">
+      <div class="feature-icon">👁️</div>
+      <div class="feature-title-group">
+        <div class="feature-name">AI Monitor</div>
+        <div class="feature-tagline">Run a single prompt against a specific provider and save the observation instantly</div>
+      </div>
+      <span class="feature-badge badge-done">Implemented</span>
+    </div>
+    <div class="feature-body">
+      <p>Lighter-weight than a full probe run. Select provider, pick or type a prompt, get the response with citations in real time, and save it to the client's observation history. Good for spot-checking a specific query without burning credits on all providers.</p>
+    </div>
+  </div>
+
+  <div class="feature">
+    <div class="feature-header">
+      <div class="feature-icon">🔔</div>
+      <div class="feature-title-group">
+        <div class="feature-name">Schedules</div>
+        <div class="feature-tagline">Automated recurring probe runs — daily, weekly, or monthly</div>
+      </div>
+      <span class="feature-badge badge-done">Implemented</span>
+    </div>
+    <div class="feature-body">
+      <p>Set a cadence (daily / weekly / monthly), choose providers and prompts, and the server's built-in scheduler fires probes automatically in the background. No external cron needed — the scheduler polls on server start.</p>
+    </div>
+  </div>
+
+  <div class="feature">
+    <div class="feature-header">
+      <div class="feature-icon">🚨</div>
+      <div class="feature-title-group">
+        <div class="feature-name">Alerts</div>
+        <div class="feature-tagline">Threshold-based alerts on mention rate, citation rate, or overall score</div>
+      </div>
+      <span class="feature-badge badge-done">Implemented</span>
+    </div>
+    <div class="feature-body">
+      <p>Define a metric (mention rate / citation rate / score), a direction (below / above), and a threshold (0–100). After each probe run the server checks all enabled alerts and timestamps those that triggered. Review which alerts fired and when in this panel.</p>
+    </div>
+  </div>
+
+  
+  <div class="section-title">Competitive intelligence</div>
+
+  <div class="feature">
+    <div class="feature-header">
+      <div class="feature-icon">📉</div>
+      <div class="feature-title-group">
+        <div class="feature-name">Competitors</div>
+        <div class="feature-tagline">Scan up to 5 competitor URLs and compare SEO / AEO / GEO scores side-by-side</div>
+      </div>
+      <span class="feature-badge badge-done">Implemented</span>
+    </div>
+    <div class="feature-body">
+      <p>Enter competitor URLs; the scanner fetches each page and scores it against the same GEO rubric used for the client. Returns a ranked table with overall score, coverage, SEO/AEO/GEO sub-scores, and the top 3 dimension gaps per competitor. Competitor scans share the 5-minute in-process cache.</p>
+    </div>
+  </div>
+
+  <div class="feature">
+    <div class="feature-header">
+      <div class="feature-icon">🏆</div>
+      <div class="feature-title-group">
+        <div class="feature-name">Benchmark</div>
+        <div class="feature-tagline">League-table scoring of 2–6 URLs with gap analysis vs the leader</div>
+      </div>
+      <span class="feature-badge badge-done">Implemented</span>
+    </div>
+    <div class="feature-body">
+      <p>Score any mix of URLs (client pages + competitors) in a single ranked table. Highlights the leader per sub-score and shows each entry's gap vs the top performer. Useful for client presentations showing relative positioning.</p>
+    </div>
+  </div>
+
+  
+  <div class="section-title">AI-powered content &amp; strategy</div>
+
+  <div class="feature">
+    <div class="feature-header">
+      <div class="feature-icon">🪄</div>
+      <div class="feature-title-group">
+        <div class="feature-name">Smart Prompts</div>
+        <div class="feature-tagline">AI-generated probe prompts tailored to your audit gaps and personas</div>
+      </div>
+      <span class="feature-badge badge-done">Implemented</span>
+    </div>
+    <div class="feature-body">
+      <p>Requires a prior page audit. Sends audit gap data to the selected AI provider, which returns intent-matched, persona-targeted probe questions designed to test brand visibility in the specific areas where the client scores lowest. Better than generic query-universe prompts for targeted measurement.</p>
+    </div>
+  </div>
+
+  <div class="feature">
+    <div class="feature-header">
+      <div class="feature-icon">✏️</div>
+      <div class="feature-title-group">
+        <div class="feature-name">Content Brief</div>
+        <div class="feature-tagline">AI-generated content brief from audit gaps — headings, FAQs, schema markup, entity links</div>
+      </div>
+      <span class="feature-badge badge-done">Implemented</span>
+    </div>
+    <div class="feature-body">
+      <p>Requires a prior audit. The selected AI provider analyses the dimension gaps and outputs a structured content brief: specific H2/H3 headings to add, FAQ questions to answer, schema types and properties to implement, entity link targets (Wikidata, Wikipedia, LinkedIn), and passage blocks. Ready to hand to a content writer.</p>
+    </div>
+  </div>
+
+  
+  <div class="section-title">Reporting &amp; export</div>
+
+  <div class="feature">
+    <div class="feature-header">
+      <div class="feature-icon">🎯</div>
+      <div class="feature-title-group">
+        <div class="feature-name">Action Plan</div>
+        <div class="feature-tagline">Prioritised fix list ordered by effort vs impact — start with quick wins</div>
+      </div>
+      <span class="feature-badge badge-done">Implemented</span>
+    </div>
+    <div class="feature-body">
+      <p>Pulls dimension gaps from the latest audit and ranks them by weighted impact. Groups fixes into SEO, AEO, and GEO tracks. Each action includes what to change, why it matters, and the expected score impact. Designed to be copied directly into a project brief or sprint backlog.</p>
+    </div>
+  </div>
+
+  <div class="feature">
+    <div class="feature-header">
+      <div class="feature-icon">📋</div>
+      <div class="feature-title-group">
+        <div class="feature-name">Executive Summary</div>
+        <div class="feature-tagline">Client-ready PDF report — 5-pillar scores, AI visibility KPIs, top recommendations</div>
+      </div>
+      <span class="feature-badge badge-done">Implemented</span>
+    </div>
+    <div class="feature-body">
+      <p>Generates a polished, printable HTML report containing: IBM 5-pillar readiness scores, AI visibility metrics from the latest probe run, top 5 recommendations with projected uplift, and a competitor comparison if scans exist. Download and print to PDF from the browser.</p>
+    </div>
+  </div>
+
+  <div class="feature">
+    <div class="feature-header">
+      <div class="feature-icon">📑</div>
+      <div class="feature-title-group">
+        <div class="feature-name">Full HTML Report / XLSX Export</div>
+        <div class="feature-tagline">Lighthouse-style audit report and spreadsheet export from the Evidence Ledger</div>
+      </div>
+      <span class="feature-badge badge-done">Implemented</span>
+    </div>
+    <div class="feature-body">
+      <p><strong>HTML Report</strong> — from the Overview evidence ledger. Lighthouse-style report with all dimensions, findings, evidence, and how-to-fix for every assessed cue. Share with developers or include in a delivery pack.</p>
+      <p><strong>XLSX Export</strong> — available from Scanner. Spreadsheet with SEO/AEO/GEO sub-scores, per-dimension findings, and top gaps. Suitable for client presentations.</p>
+    </div>
+  </div>
+
+  
+  <div class="section-title">Query universe &amp; observations</div>
+
+  <div class="feature">
+    <div class="feature-header">
+      <div class="feature-icon">🔎</div>
+      <div class="feature-title-group">
+        <div class="feature-name">Query Universe</div>
+        <div class="feature-tagline">Auto-generated prompt set by intent — Education, Evaluation, Implementation, Comparison</div>
+      </div>
+      <span class="feature-badge badge-done">Implemented</span>
+    </div>
+    <div class="feature-body">
+      <p>Deterministically generates a repeatable set of prompts from the client's products, market, and competitors — no LLM call needed. Each prompt has an intent label. Run any prompt directly from this tab into the AI Monitor, or export all prompts as JSON. Add and save custom prompts to supplement the auto-generated set.</p>
+    </div>
+  </div>
+
+  <div class="feature">
+    <div class="feature-header">
+      <div class="feature-icon">🌐</div>
+      <div class="feature-title-group">
+        <div class="feature-name">Observations</div>
+        <div class="feature-tagline">View, import, and manage saved AI engine responses with citation tracking</div>
+      </div>
+      <span class="feature-badge badge-done">Implemented</span>
+    </div>
+    <div class="feature-body">
+      <p>The observation ledger shows all saved AI responses with mention rate and citation rate. Supports three import paths:</p>
+      <ul class="steps">
+        <li><span class="step-num">A</span><span class="step-text"><strong>Live AI Monitor</strong> — run a prompt against a provider and save in one click</span></li>
+        <li><span class="step-num">B</span><span class="step-text"><strong>JSON import</strong> — paste a JSON array of observations (useful for Postman/API-collected data)</span></li>
+        <li><span class="step-num">C</span><span class="step-text"><strong>CSV import wizard</strong> — bulk-import from a spreadsheet with column mapping</span></li>
+      </ul>
+      <p style="margin-top:10px">Rates are computed over the latest 200 observations per client.</p>
+    </div>
+  </div>
+
+  
+  <div class="section-title">Workspace &amp; integrations</div>
+
+  <div class="feature">
+    <div class="feature-header">
+      <div class="feature-icon">🖥️</div>
+      <div class="feature-title-group">
+        <div class="feature-name">Dashboard</div>
+        <div class="feature-tagline">Multi-client overview — all clients ranked by score at a glance</div>
+      </div>
+      <span class="feature-badge badge-done">Implemented</span>
+    </div>
+    <div class="feature-body">
+      <p>Shows all saved clients with their latest audit score and sub-scores in a summary table. Click any client to jump straight to their Overview. Useful when managing multiple accounts.</p>
+    </div>
+  </div>
+
+  <div class="feature">
+    <div class="feature-header">
+      <div class="feature-icon">🔗</div>
+      <div class="feature-title-group">
+        <div class="feature-name">Integrations</div>
+        <div class="feature-tagline">Configure AI providers, CMS connectors, and export pipelines</div>
+      </div>
+      <span class="feature-badge badge-partial">Partial</span>
+    </div>
+    <div class="feature-body">
+      <p>Shows the integration status of all evidence sources. Configure via <code>.env</code> on the server.</p>
+      <table>
+        <thead><tr><th>Integration</th><th>Status</th><th>Env variable</th></tr></thead>
+        <tbody>
+          <tr><td>OpenAI web search</td><td>✅ Implemented</td><td><code>OPENAI_API_KEY</code>, <code>GEO_OPENAI_MODEL</code></td></tr>
+          <tr><td>Google Gemini grounded search</td><td>✅ Implemented</td><td><code>GEMINI_API_KEY</code>, <code>GEO_GEMINI_MODEL</code></td></tr>
+          <tr><td>Anthropic Claude web search</td><td>✅ Implemented</td><td><code>ANTHROPIC_API_KEY</code>, <code>GEO_CLAUDE_MODEL</code></td></tr>
+          <tr><td>Perplexity Sonar</td><td>✅ Implemented</td><td><code>PERPLEXITY_API_KEY</code>, <code>GEO_PERPLEXITY_MODEL</code></td></tr>
+          <tr><td>Contentful CMS</td><td>✅ Implemented</td><td><code>CONTENTFUL_SPACE_ID</code>, <code>CONTENTFUL_ACCESS_TOKEN</code></td></tr>
+          <tr><td>Browser crawler (JS-heavy pages)</td><td>✅ Implemented</td><td><code>GEO_USE_BROWSER=true</code></td></tr>
+          <tr><td>Job queue / async workers</td><td>⏳ Planned</td><td>—</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  
+  <div class="section-title">Recommended workflow</div>
+  <div style="background:#f7f8fa;border:1px solid #e5e7eb;padding:20px 20px 16px;margin-bottom:32px">
+    <p style="font-size:13px;color:#57606a;margin-bottom:14px">First engagement with a new client:</p>
+    <div class="workflow">
+      <span class="wf-step">Add Client</span><span class="wf-arrow">→</span>
+      <span class="wf-step">Scanner (live URL)</span><span class="wf-arrow">→</span>
+      <span class="wf-step">Save audit</span><span class="wf-arrow">→</span>
+      <span class="wf-step">AI Visibility probe</span><span class="wf-arrow">→</span>
+      <span class="wf-step">Smart Prompts</span><span class="wf-arrow">→</span>
+      <span class="wf-step">Content Brief</span><span class="wf-arrow">→</span>
+      <span class="wf-step">Action Plan</span><span class="wf-arrow">→</span>
+      <span class="wf-step">Executive Summary</span>
+    </div>
+    <p style="font-size:13px;color:#57606a;margin-top:16px">Ongoing monitoring:</p>
+    <div class="workflow">
+      <span class="wf-step">Schedules (weekly probe)</span><span class="wf-arrow">→</span>
+      <span class="wf-step">Alerts (mention rate &lt; 50%)</span><span class="wf-arrow">→</span>
+      <span class="wf-step">Re-scan after content changes</span><span class="wf-arrow">→</span>
+      <span class="wf-step">Progress (before/after)</span>
+    </div>
+  </div>
+
+  <div class="page-footer">
+    Made with IBM Bob
+  </div>
+</div>
+</body>
+</html>

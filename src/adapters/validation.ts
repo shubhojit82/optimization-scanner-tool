@@ -52,3 +52,16 @@ export const alertSchema = z.object({
     direction: z.enum(['below','above']),
     enabled: z.boolean().optional(),
 }).strict();
+
+export const findingPatchSchema = z.object({
+    status: z.enum(['open','approved','rejected','implemented','resolved']).optional(),
+    owner: z.string().trim().min(1).max(100).optional(),
+}).strict();
+
+export const recommendationPatchSchema = z.object({
+    status: z.enum(['draft','approved','rejected','implemented']).optional(),
+    reviewNote: z.string().trim().max(1000).optional(),
+    owner: z.string().trim().min(1).max(100).optional(),
+    effort: z.enum(['low','medium','high']).optional(),
+    impact: z.enum(['low','medium','high']).optional(),
+}).strict();

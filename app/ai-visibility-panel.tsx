@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from 'react';
-import { Activity, AlertTriangle, BarChart2, CheckCircle2, ChevronDown, ChevronUp, Clock, Globe, History, MessageCircle, Search, TrendingUp, Users, XCircle, Zap } from 'lucide-react';
+import { Activity, AlertTriangle, BarChart2, CheckCircle2, ChevronDown, ChevronUp, Clock, DollarSign, Globe, History, MessageCircle, Search, TrendingUp, Users, XCircle, Zap } from 'lucide-react';
 import type { Client, ProbeRun, ProbeResult } from '../src/core/contracts';
 import { queryUniverse } from '../src/core/scoring';
 import { api } from './workbench-api';
@@ -10,6 +10,9 @@ type Props = {
     busy: boolean;
     onBusy: (b: boolean) => void;
     availableProviders: { id: string; label: string; configured: boolean }[];
+    /** Prompts sent from Smart Prompts; pre-filled into custom prompts on mount */
+    queuedPrompts?: string[];
+    onQueuedConsumed?: () => void;
 };
 
 const ENGINE_COLORS: Record<string, string> = { openai: '#15803d', gemini: '#1a73e8', perplexity: '#7c5cd8' };
@@ -86,16 +89,17 @@ function ProviderToggle({ id, label, selected, configured, onToggle }: {
     );
 }
 
-export function AIVisibilityPanel({ client, busy, onBusy, availableProviders }: Props) {
+export function AIVisibilityPanel({ client, busy, onBusy, availableProviders, queuedPrompts, onQueuedConsumed }: Props) {
     const [probeRun, setProbeRun] = useState<ProbeRun | null>(null);
     const [history, setHistory] = useState<ProbeRun[]>([]);
-    const [historyTab, setHistoryTab] = useState<'current' | 'history'>('current');
+    const [historyTab, setHistoryTab] = useState<'current' | 'history' | 'spend'>('current');
     const [error, setError] = useState('');
     const [selectedProviders, setSelectedProviders] = useState<string[]>(
         availableProviders.filter(p => p.configured).map(p => p.id)
     );
-    const [customPrompts, setCustomPrompts] = useState('');
-    const [useQueryUniverse, setUseQueryUniverse] = useState(true);
+    const [customPrompts, setCustomPrompts] = useState((queuedPrompts ?? []).join('\n'));
+    const [useQueryUniverse, setUseQueryUniverse] = useState(!queuedPrompts?.length);
+    useEffect(() => { if (queuedPrompts?.length) onQueuedConsumed?.(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
     const [expandedResult, setExpandedResult] = useState<number | null>(null);
     const [running, setRunning] = useState(false);
 
@@ -240,11 +244,65 @@ export function AIVisibilityPanel({ client, busy, onBusy, availableProviders }: 
                         {!running && probeRun && (
                             <span style={{ fontSize: 12, color: '#9ca3af' }}>
                                 Last run · {probeRun.results.length} responses · {probeRun.engines.join(', ')}
+                                {probeRun.totalTokens ? ` · ${probeRun.totalTokens.toLocaleString()} tokens` : ''}
+                                {probeRun.totalEstimatedCostUsd ? ` · ~$${probeRun.totalEstimatedCostUsd.toFixed(4)}` : ''}
                             </span>
                         )}
                     </div>
                 </div>
             </section>
+
+            {/* ── Empty state (no probes run yet) ── */}
+            {!probeRun && history.length === 0 && !running && (
+                <div style={{ background:'linear-gradient(135deg,#f8faff 0%,#f0f4ff 100%)', border:'1px solid #e4e6ef', borderRadius:10, padding:'32px 32px', display:'flex', gap:48, alignItems:'center', flexWrap:'wrap' }}>
+                    <div style={{ flexShrink:0 }}>
+                        <svg width={240} height={130} viewBox="0 0 240 130" aria-hidden="true">
+                            {/* 3 engine nodes */}
+                            {[['OpenAI','#15803d',30],['Gemini','#1a73e8',110],['Perplexity','#7c5cd8',190]].map(([lbl,col,cx])=>(
+                                <g key={lbl as string}>
+                                    <circle cx={cx as number} cy={40} r={22} fill={(col as string)+'15'} stroke={col as string} strokeWidth={1.5}/>
+                                    <text x={cx as number} y={45} textAnchor="middle" fontSize={9} fontWeight={700} fill={col as string}>{lbl}</text>
+                                    <line x1={cx as number} y1={62} x2={120} y2={90} stroke="#d1d5db" strokeWidth={1} strokeDasharray="3 2"/>
+                                </g>
+                            ))}
+                            {/* Brand node */}
+                            <rect x={88} y={88} width={64} height={28} rx={6} fill="#4f6ef7"/>
+                            <text x={120} y={106} textAnchor="middle" fontSize={10} fontWeight={700} fill="#fff">Your brand</text>
+                            {/* Mention badges */}
+                            {[[35,72,'✓'],[115,72,'✓'],[195,72,'✗']].map(([bx,by,t],i)=>(
+                                <g key={i}>
+                                    <circle cx={bx as number} cy={by as number} r={9} fill={t==='✓'?'#dcfce7':'#fee2e2'}/>
+                                    <text x={bx as number} y={(by as number)+4} textAnchor="middle" fontSize={9} fontWeight={700} fill={t==='✓'?'#15803d':'#b91c1c'}>{t}</text>
+                                </g>
+                            ))}
+                            <text x={120} y={125} textAnchor="middle" fontSize={9} fill="#9ca3af">Fire prompts · measure mentions · track sentiment</text>
+                        </svg>
+                        <p style={{ fontSize:11, color:'#9ca3af', textAlign:'center', marginTop:4 }}>Illustrative — run a probe to see real data</p>
+                    </div>
+                    <div style={{ flex:1, minWidth:220 }}>
+                        <div style={{ fontSize:11, fontWeight:700, letterSpacing:'.08em', color:'#4f6ef7', textTransform:'uppercase', marginBottom:12 }}>What AI Visibility Probe does</div>
+                        <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+                            {[
+                                { icon:<Zap size={15}/>, color:'#4f6ef7', bg:'#eef2ff', title:'Fires real prompts at AI engines', text:'Sends your client-intent queries to OpenAI, Gemini, and Perplexity simultaneously.' },
+                                { icon:<MessageCircle size={15}/>, color:'#8b5cf6', bg:'#f5f3ff', title:'Measures brand mention rate', text:'Detects brand mentions and domain citations in every AI-generated response.' },
+                                { icon:<TrendingUp size={15}/>, color:'#10b981', bg:'#ecfdf5', title:'Sentiment & share of voice', text:'Classifies each mention as positive, neutral, negative, or absent. Compares against competitors.' },
+                                { icon:<History size={15}/>, color:'#d97706', bg:'#fffbeb', title:'Tracks trends over time', text:'Every run is saved to history — view KPI trends across multiple probe dates.' },
+                            ].map(item=>(
+                                <div key={item.title} style={{ display:'flex', gap:12, alignItems:'flex-start' }}>
+                                    <div style={{ width:30, height:30, borderRadius:8, background:item.bg, color:item.color, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>{item.icon}</div>
+                                    <div>
+                                        <div style={{ fontSize:13, fontWeight:600, color:'#1a1d2e' }}>{item.title}</div>
+                                        <div style={{ fontSize:12, color:'#6b7280', marginTop:2, lineHeight:1.5 }}>{item.text}</div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        <div style={{ marginTop:16, padding:'10px 14px', background:'#fff', border:'1px solid #e4e6ef', borderRadius:8, fontSize:12, color:'#374151', lineHeight:1.5 }}>
+                            <strong style={{ color:'#4f6ef7' }}>Ready to run.</strong> Select providers and prompts above, then hit <strong>Run AI Visibility Probe</strong>.
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* ── Tab switcher (shown once there's history) ── */}
             {(probeRun || history.length > 0) && (
@@ -256,6 +314,9 @@ export function AIVisibilityPanel({ client, busy, onBusy, availableProviders }: 
                         <button onClick={() => setHistoryTab('history')} style={{ background: historyTab === 'history' ? '#fff' : 'transparent', border: 'none', borderRadius: 6, padding: '7px 18px', fontSize: '.85rem', fontWeight: historyTab === 'history' ? 650 : 500, color: historyTab === 'history' ? '#0d8073' : '#57606a', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
                             <History size={14} /> History {history.length > 0 && <span style={{ background: '#0d8073', color: '#fff', borderRadius: 20, padding: '0 6px', fontSize: 10, fontWeight: 700 }}>{history.length}</span>}
                         </button>
+                        <button onClick={() => setHistoryTab('spend')} style={{ background: historyTab === 'spend' ? '#fff' : 'transparent', border: 'none', borderRadius: 6, padding: '7px 18px', fontSize: '.85rem', fontWeight: historyTab === 'spend' ? 650 : 500, color: historyTab === 'spend' ? '#d97706' : '#57606a', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <DollarSign size={14} /> Spend
+                        </button>
                     </div>
                     {history.length >= 2 && historyTab === 'history' && (
                         <span style={{ fontSize: 12, color: '#57606a' }}>
@@ -264,6 +325,11 @@ export function AIVisibilityPanel({ client, busy, onBusy, availableProviders }: 
                         </span>
                     )}
                 </div>
+            )}
+
+            {/* ── Spend tab ── */}
+            {historyTab === 'spend' && (
+                <SpendDashboard runs={history} currentRun={probeRun} />
             )}
 
             {/* ── History tab: KPI trend + run list ── */}
@@ -533,6 +599,162 @@ export function AIVisibilityPanel({ client, busy, onBusy, availableProviders }: 
                 )}
 
             </>)}
+        </div>
+    );
+}
+
+// ── Spend Dashboard ──────────────────────────────────────────────────────────
+
+const ENGINE_COLORS_FULL: Record<string, string> = {
+    openai: '#15803d',
+    gemini: '#1a73e8',
+    claude: '#d97706',
+    perplexity: '#7c5cd8',
+};
+
+function SpendDashboard({ runs, currentRun }: { runs: ProbeRun[]; currentRun: ProbeRun | null }) {
+    const allRuns = currentRun && !runs.find(r => r.id === currentRun.id)
+        ? [currentRun, ...runs]
+        : runs;
+
+    // Aggregate across all runs
+    const totalTokens = allRuns.reduce((s, r) => s + (r.totalTokens ?? 0), 0);
+    const totalCost = allRuns.reduce((s, r) => s + (r.totalEstimatedCostUsd ?? 0), 0);
+    const totalFailed = allRuns.reduce((s, r) => s + (r.failedCount ?? 0), 0);
+    const totalProbes = allRuns.reduce((s, r) => s + r.results.length, 0);
+
+    // Per-engine aggregates
+    const engineMap: Record<string, { tokens: number; cost: number; runs: number }> = {};
+    for (const r of allRuns) {
+        for (const e of (r.costByEngine ?? [])) {
+            if (!engineMap[e.engine]) engineMap[e.engine] = { tokens: 0, cost: 0, runs: 0 };
+            engineMap[e.engine].tokens += e.tokens;
+            engineMap[e.engine].cost += e.estimatedCostUsd;
+            engineMap[e.engine].runs += 1;
+        }
+    }
+    const engines = Object.entries(engineMap).sort((a, b) => b[1].cost - a[1].cost);
+    const maxCost = engines[0]?.[1].cost ?? 0;
+
+    if (allRuns.length === 0) {
+        return (
+            <section className="panel">
+                <div className="panel-heading">
+                    <div><h2>Spend Dashboard</h2><p>Run a probe to start tracking AI token usage and estimated cost.</p></div>
+                    <DollarSign size={18} style={{ color: '#9ca3af', flexShrink: 0 }} />
+                </div>
+            </section>
+        );
+    }
+
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {/* KPI strip */}
+            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+                {[
+                    { label: 'Total Estimated Cost', value: `$${totalCost.toFixed(4)}`, sub: `${allRuns.length} probe run${allRuns.length !== 1 ? 's' : ''}`, color: '#d97706', icon: <DollarSign size={16} /> },
+                    { label: 'Total Tokens Used', value: totalTokens.toLocaleString(), sub: `${Math.round(totalTokens / Math.max(totalProbes, 1)).toLocaleString()} avg per probe`, color: '#4f6ef7', icon: <Zap size={16} /> },
+                    { label: 'Failed Probes', value: totalFailed.toString(), sub: `${Math.round(totalFailed / Math.max(totalProbes, 1) * 100)}% failure rate`, color: totalFailed > 0 ? '#dc2626' : '#15803d', icon: <XCircle size={16} /> },
+                    { label: 'Cost Per Probe', value: `$${(totalCost / Math.max(totalProbes, 1)).toFixed(5)}`, sub: `across ${totalProbes} total probes`, color: '#7c5cd8', icon: <TrendingUp size={16} /> },
+                ].map(card => (
+                    <div key={card.label} style={{ flex: '1 1 180px', minWidth: 160, background: '#fff', border: '1px solid #e0e7ed', borderRadius: 9, padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: '#57606a', textTransform: 'uppercase', letterSpacing: '0.07em' }}>{card.label}</span>
+                            <span style={{ color: card.color, opacity: 0.6 }}>{card.icon}</span>
+                        </div>
+                        <div style={{ fontSize: 28, fontWeight: 800, color: card.color, lineHeight: 1, letterSpacing: '-0.02em' }}>{card.value}</div>
+                        <div style={{ fontSize: 12, color: '#6b7280', lineHeight: 1.5 }}>{card.sub}</div>
+                    </div>
+                ))}
+            </div>
+
+            {/* Per-engine breakdown */}
+            {engines.length > 0 && (
+                <section className="panel">
+                    <div className="panel-heading">
+                        <div>
+                            <h2>Cost by Provider</h2>
+                            <p>Estimated cost breakdown across all probe runs, per AI engine</p>
+                        </div>
+                        <DollarSign size={18} style={{ color: '#9ca3af', flexShrink: 0 }} />
+                    </div>
+                    <div style={{ padding: '14px 24px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+                        {engines.map(([engine, data]) => {
+                            const color = ENGINE_COLORS_FULL[engine] ?? '#57606a';
+                            const barW = maxCost > 0 ? Math.round(data.cost / maxCost * 100) : 0;
+                            return (
+                                <div key={engine}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 7 }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                                            <span style={{ width: 10, height: 10, borderRadius: '50%', background: color, flexShrink: 0 }} />
+                                            <span style={{ fontSize: 14, fontWeight: 600, color: '#1f2328', textTransform: 'capitalize' }}>{engine}</span>
+                                        </div>
+                                        <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+                                            <span style={{ fontSize: 12, color: '#6b7280' }}>{data.tokens.toLocaleString()} tokens</span>
+                                            <span style={{ fontSize: 15, fontWeight: 800, color }}>${data.cost.toFixed(5)}</span>
+                                        </div>
+                                    </div>
+                                    <div style={{ height: 8, background: '#f0f0f0', borderRadius: 4, overflow: 'hidden' }}>
+                                        <div style={{ height: '100%', width: barW + '%', background: color, borderRadius: 4, transition: 'width .5s ease' }} />
+                                    </div>
+                                    <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>
+                                        {data.runs} run{data.runs !== 1 ? 's' : ''} · avg ${(data.cost / data.runs).toFixed(5)} per run
+                                    </div>
+                                </div>
+                            );
+                        })}
+                        <div style={{ marginTop: 6, padding: '11px 14px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, fontSize: 12, color: '#92400e', lineHeight: 1.5 }}>
+                            Costs are estimates based on published token pricing at the time of each run.
+                            Actual billed amounts may differ — check your provider dashboards for authoritative usage.
+                        </div>
+                    </div>
+                </section>
+            )}
+
+            {/* Per-run cost table */}
+            <section className="panel">
+                <div className="panel-heading">
+                    <div><h2>Run-by-run Cost Log</h2><p>Token and cost totals for every probe run</p></div>
+                    <Clock size={18} style={{ color: '#9ca3af', flexShrink: 0 }} />
+                </div>
+                <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                        <thead>
+                            <tr style={{ background: '#f7f8fa' }}>
+                                {['Date', 'Engines', 'Prompts', 'Tokens', 'Est. Cost', 'Failed'].map(h => (
+                                    <th key={h} style={{ padding: '9px 14px', textAlign: 'left', fontWeight: 700, color: '#6b7280', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.06em', borderBottom: '2px solid #e4e6ef', whiteSpace: 'nowrap' }}>{h}</th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {allRuns.map((r, i) => (
+                                <tr key={r.id ?? i} style={{ background: i % 2 === 0 ? '#fff' : '#fafafa', borderBottom: '1px solid #f0f0f0' }}>
+                                    <td style={{ padding: '9px 14px', color: '#374151', whiteSpace: 'nowrap' }}>
+                                        {new Date(r.created).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                    </td>
+                                    <td style={{ padding: '9px 14px' }}>
+                                        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                                            {r.engines.map(e => (
+                                                <span key={e} style={{ fontSize: 10, fontWeight: 700, background: (ENGINE_COLORS_FULL[e] ?? '#57606a') + '14', color: ENGINE_COLORS_FULL[e] ?? '#57606a', padding: '2px 7px', borderRadius: 6, textTransform: 'capitalize' }}>{e}</span>
+                                            ))}
+                                        </div>
+                                    </td>
+                                    <td style={{ padding: '9px 14px', color: '#374151' }}>{r.results.length}</td>
+                                    <td style={{ padding: '9px 14px', color: '#374151', fontVariantNumeric: 'tabular-nums' }}>
+                                        {r.totalTokens ? r.totalTokens.toLocaleString() : '—'}
+                                    </td>
+                                    <td style={{ padding: '9px 14px', fontWeight: 700, color: '#d97706', fontVariantNumeric: 'tabular-nums' }}>
+                                        {r.totalEstimatedCostUsd != null ? `$${r.totalEstimatedCostUsd.toFixed(5)}` : '—'}
+                                    </td>
+                                    <td style={{ padding: '9px 14px', color: (r.failedCount ?? 0) > 0 ? '#dc2626' : '#9ca3af', fontWeight: (r.failedCount ?? 0) > 0 ? 700 : 400 }}>
+                                        {r.failedCount ?? 0}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </section>
         </div>
     );
 }
@@ -946,6 +1168,9 @@ function ProbeHistoryList({ runs, onSelect }: { runs: ProbeRun[]; onSelect: (r: 
                             <span style={{ fontWeight: 700, color: '#7c5cd8' }}>{r.citationRate ?? '—'}{r.citationRate !== null ? '%' : ''}</span>
                             <span style={{ fontSize: 11, color: '#57606a' }}>{r.engines.join(', ')}</span>
                             <span style={{ fontSize: 11, color: '#57606a' }}>{r.prompts.length}</span>
+                            <span style={{ fontSize: 11, color: '#9ca3af', fontFamily: 'IBM Plex Mono,monospace' }}>
+                                {r.totalEstimatedCostUsd ? `$${r.totalEstimatedCostUsd.toFixed(4)}` : '—'}
+                            </span>
                         </button>
                     );
                 })}

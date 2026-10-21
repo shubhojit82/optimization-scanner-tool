@@ -17,7 +17,7 @@ export type SitemapInfo = {
     error?: string;
 };
 
-export type ScanSnapshot = PageSnapshot & {flags: BlockFlag[]; aiBotAccess?: AiBotAccess; sitemapInfo?: SitemapInfo};
+export type ScanSnapshot = PageSnapshot & {flags: BlockFlag[]; aiBotAccess?: AiBotAccess; sitemapInfo?: SitemapInfo; renderedHtml?: string};
 
 export type AiBotAccess = {
     fetched: boolean;

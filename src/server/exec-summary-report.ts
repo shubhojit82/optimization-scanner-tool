@@ -311,11 +311,11 @@ td{padding:9px 14px;border-bottom:1px solid #f0f2f5}
 
 ${kpiHtml}
 
-<!-- IBM 5-Pillar Readiness -->
+<!-- GEO Readiness Pillars -->
 <section class="section">
     <div class="section-header">
-        <h2>IBM 5-Pillar Readiness</h2>
-        <p class="section-sub">Score contribution per IBM GEO framework pillar — all 5 pillars shown; unmeasured pillars shown with dashes</p>
+        <h2>GEO Readiness Pillars</h2>
+        <p class="section-sub">Score contribution per GEO readiness framework pillar — all 5 pillars shown; unmeasured pillars shown with dashes</p>
     </div>
     <div class="section-body">${pillarRows}</div>
 </section>

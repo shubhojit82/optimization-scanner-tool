@@ -28,14 +28,21 @@ export class PerplexityProvider implements AIProvider {
         }
         let raw:unknown;
         try{raw=await result.json()}catch{throw new CollectionError('Perplexity returned invalid JSON. No observation was saved.')}
-        const data=raw as {choices?:{message?:{content?:string;citations?:string[]}}[];model?:string;id?:string;citations?:string[]};
+        const data=raw as {choices?:{message?:{content?:string;citations?:string[]}}[];model?:string;id?:string;citations?:string[];usage?:{prompt_tokens?:number;completion_tokens?:number;total_tokens?:number}};
+        // Perplexity sonar: ~$1/M input, $1/M output tokens (approximate)
+        const pCost=(i:number,o:number)=>(i+o)/1_000_000;
         const content=data?.choices?.[0]?.message?.content?.trim()||'';
         if(!content||content.length>12000) throw new CollectionError('Perplexity returned an empty or oversized answer. No observation was saved.');
         // Perplexity returns citations at both response root and message level
         const rawCitations:unknown[]=Array.isArray(data.citations)?data.citations
             :Array.isArray(data?.choices?.[0]?.message?.citations)?data.choices![0].message!.citations!:[];
         const citations=[...new Set(rawCitations.filter((u):u is string=>typeof u==='string'&&safeUrl(u)))];
+        const inTok=data.usage?.prompt_tokens??0;
+        const outTok=data.usage?.completion_tokens??0;
+        const tokenCount=(data.usage?.total_tokens||(inTok+outTok))||undefined;
+        const estimatedCostUsd=tokenCount?pCost(inTok,outTok):undefined;
         return {engine:this.id,surface:'Chat Completions API · web search',model:data.model||this.model,
-            prompt,response:content,citations,providerResponseId:data.id,observedAt:new Date().toISOString()};
+            prompt,response:content,citations,providerResponseId:data.id,observedAt:new Date().toISOString(),
+            tokenCount,estimatedCostUsd};
     }
 }

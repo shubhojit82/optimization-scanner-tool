@@ -14,3 +14,6 @@ data/
 *.sqlite*
 
 backups/
+
+# Client reference material (large, possibly confidential)
+reference-docs/

@@ -48,7 +48,7 @@ function buildGapContext(client: Client, audit: Audit): string {
     return lines.join('\n');
 }
 
-const BRIEF_PROMPT = (ctx: string) => `You are an expert GEO (Generative Engine Optimisation) content strategist working with an IBM consultant. 
+const BRIEF_PROMPT = (ctx: string) => `You are an expert GEO (Generative Engine Optimisation) content strategist working with a GEO specialist. 
 Based on the following audit gap analysis, generate a detailed, actionable content brief in valid JSON.
 
 AUDIT GAP ANALYSIS:

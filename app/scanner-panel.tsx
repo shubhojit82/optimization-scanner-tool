@@ -1,7 +1,9 @@
 "use client";
 import {useState} from 'react';
-import {Search, Download, AlertTriangle, CheckCircle, Loader, ExternalLink, RefreshCw, ChevronDown, Save, Globe, Bot, Map} from 'lucide-react';
-import type {ScanResult} from '../src/application/scanner';
+import {Search, Download, AlertTriangle, CheckCircle, Loader, ExternalLink, RefreshCw, ChevronDown, Save, Globe, Bot, Map, Zap, FileText, BarChart2, Cpu, GitCompare} from 'lucide-react';
+import type {ScanResult, RawVsRenderedDelta} from '../src/application/scanner';
+import type {TechStack} from '../src/core/tech-detect';
+import type {RgpsResult, RgpsDimensionResult} from '../src/core/rgps';
 import type {AiBotAccess, SitemapInfo} from '../src/server/node-crawler';
 import type {SiteScanResult, PageCrawlResult} from '../src/server/site-crawler';
 import type {Client} from '../src/core/contracts';
@@ -48,6 +50,115 @@ function ScorePill({score, avg}: {score: number; avg: number | null}) {
     );
 }
 
+// ── Scanner empty state ────────────────────────────────────────────────────────
+function ScannerEmptyState({ mode }: { mode: 'single' | 'site' }) {
+    const isSingle = mode === 'single';
+    return (
+        <div style={{
+            background: 'linear-gradient(135deg, #f8faff 0%, #f0f4ff 100%)',
+            border: '1px solid #e4e6ef',
+            borderRadius: 10,
+            padding: '32px 32px',
+            display: 'flex',
+            gap: 48,
+            alignItems: 'center',
+            flexWrap: 'wrap',
+        }}>
+            {/* SVG illustration */}
+            <div style={{ flexShrink: 0 }}>
+                {isSingle ? (
+                    <svg width={260} height={140} viewBox="0 0 260 140" aria-hidden="true">
+                        {/* Page outline */}
+                        <rect x={20} y={10} width={100} height={120} rx={6} fill="#fff" stroke="#e4e6ef" strokeWidth={1.5} />
+                        {/* Page lines */}
+                        {[28, 38, 48, 58, 68, 78, 88, 98, 108].map((y, i) => (
+                            <rect key={y} x={30} y={y} width={i % 3 === 2 ? 50 : 72} height={5} rx={2.5} fill="#e4e6ef" />
+                        ))}
+                        {/* Score ring */}
+                        <circle cx={180} cy={70} r={44} fill="none" stroke="#e4e6ef" strokeWidth={8} />
+                        <circle cx={180} cy={70} r={44} fill="none" stroke="#4f6ef7" strokeWidth={8}
+                            strokeDasharray="193 83" strokeLinecap="round"
+                            transform="rotate(-90 180 70)" />
+                        <text x={180} y={65} textAnchor="middle" fontSize={22} fontWeight={700} fill="#1a1d2e" fontFamily="IBM Plex Mono, monospace">72</text>
+                        <text x={180} y={82} textAnchor="middle" fontSize={10} fill="#6b7280">/100</text>
+                        {/* Arrow from page to ring */}
+                        <line x1={122} y1={70} x2={132} y2={70} stroke="#4f6ef7" strokeWidth={1.5} strokeDasharray="3 2" />
+                        <polygon points="132,66 140,70 132,74" fill="#4f6ef7" />
+                        {/* Sub-score dots */}
+                        {[['SEO', '#4f6ef7', 155], ['AEO', '#8b5cf6', 180], ['GEO', '#10b981', 205]].map(([lbl, col, cx]) => (
+                            <g key={lbl as string}>
+                                <circle cx={cx as number} cy={124} r={6} fill={col as string} />
+                                <text x={cx as number} y={138} textAnchor="middle" fontSize={8} fill="#6b7280">{lbl}</text>
+                            </g>
+                        ))}
+                    </svg>
+                ) : (
+                    <svg width={260} height={140} viewBox="0 0 260 140" aria-hidden="true">
+                        {/* Site tree */}
+                        <rect x={110} y={8} width={44} height={28} rx={4} fill="#4f6ef7" opacity={0.9} />
+                        <text x={132} y={27} textAnchor="middle" fontSize={9} fill="#fff" fontWeight={700}>Home</text>
+                        {/* Lines down */}
+                        <line x1={132} y1={36} x2={132} y2={52} stroke="#c4c8d8" strokeWidth={1.5} />
+                        <line x1={50} y1={52} x2={214} y2={52} stroke="#c4c8d8" strokeWidth={1.5} />
+                        {[50, 132, 214].map((cx, i) => (
+                            <g key={cx}>
+                                <line x1={cx} y1={52} x2={cx} y2={64} stroke="#c4c8d8" strokeWidth={1.5} />
+                                <rect x={cx - 22} y={64} width={44} height={24} rx={4}
+                                    fill={i === 0 ? '#f0fdf4' : i === 1 ? '#eff6ff' : '#fef9c3'}
+                                    stroke={i === 0 ? '#86efac' : i === 1 ? '#93c5fd' : '#fde68a'} strokeWidth={1} />
+                                <text x={cx} y={80} textAnchor="middle" fontSize={8} fill="#374151">Page {i + 1}</text>
+                                {/* Mini score */}
+                                <text x={cx} y={105} textAnchor="middle" fontSize={11} fontWeight={700}
+                                    fill={i === 0 ? '#15803d' : i === 1 ? '#4f6ef7' : '#b45309'}>
+                                    {[81, 72, 55][i]}
+                                </text>
+                            </g>
+                        ))}
+                        <text x={132} y={125} textAnchor="middle" fontSize={9} fill="#9ca3af">50 pages · depth 3 · site-wide gaps</text>
+                    </svg>
+                )}
+                <p style={{ fontSize: 11, color: '#9ca3af', textAlign: 'center', marginTop: 6 }}>
+                    Illustrative — run a scan to see real scores
+                </p>
+            </div>
+
+            {/* Feature explainer */}
+            <div style={{ flex: 1, minWidth: 220 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.08em', color: '#4f6ef7', textTransform: 'uppercase', marginBottom: 12 }}>
+                    {isSingle ? 'What single-page scan does' : 'What full-site scan does'}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                    {(isSingle ? [
+                        { icon: <Globe size={15} />, color: '#4f6ef7', bg: '#eef2ff', title: 'Fetches the live page', text: 'Retrieves HTML via HTTP crawler — the same content search bots see.' },
+                        { icon: <BarChart2 size={15} />, color: '#8b5cf6', bg: '#f5f3ff', title: 'Scores SEO · AEO · GEO', text: 'Runs every rubric dimension: structure, schema, content cues, AI-bot access, sitemap.' },
+                        { icon: <FileText size={15} />, color: '#10b981', bg: '#ecfdf5', title: 'Export & save', text: 'Download an XLSX report or save directly to a client\'s audit history.' },
+                    ] : [
+                        { icon: <Map size={15} />, color: '#4f6ef7', bg: '#eef2ff', title: 'Crawls up to 50 pages', text: 'Follows internal links depth-first up to depth 3 — polite sequential crawl.' },
+                        { icon: <BarChart2 size={15} />, color: '#8b5cf6', bg: '#f5f3ff', title: 'Site-wide gap analysis', text: 'Surfaces dimensions missing across multiple pages for maximum impact.' },
+                        { icon: <Zap size={15} />, color: '#10b981', bg: '#ecfdf5', title: 'Per-page scores + XLSX', text: 'Every crawled page scored individually — export all results in one spreadsheet.' },
+                    ]).map(item => (
+                        <div key={item.title} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                            <div style={{ width: 30, height: 30, borderRadius: 8, background: item.bg, color: item.color, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                {item.icon}
+                            </div>
+                            <div>
+                                <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1d2e' }}>{item.title}</div>
+                                <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2, lineHeight: 1.5 }}>{item.text}</div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+                <div style={{ marginTop: 16, padding: '10px 14px', background: '#fff', border: '1px solid #e4e6ef', borderRadius: 8, fontSize: 12, color: '#374151', lineHeight: 1.5 }}>
+                    {isSingle
+                        ? <><strong style={{ color: '#4f6ef7' }}>Tip:</strong> Select a client in <strong>Match client</strong> to save scan results directly to the Overview tab.</>
+                        : <><strong style={{ color: '#4f6ef7' }}>Tip:</strong> Site scan takes 1–3 minutes. JavaScript-rendered content is not assessed — use the single-page scan for SPAs.</>
+                    }
+                </div>
+            </div>
+        </div>
+    );
+}
+
 // ── Single page scan panel ────────────────────────────────────────────────────
 function SingleScanPanel({clients, busy, onBusy, onSaved}: Props) {
     const [url, setUrl] = useState('');
@@ -86,7 +197,10 @@ function SingleScanPanel({clients, busy, onBusy, onSaved}: Props) {
     async function saveToClient() {
         if (!result?.audit || !clientId || saving) return;
         setSaving(true); setError('');
-        try { await api('scan/save', {clientId, audit:result.audit}); setSaved(true); onSaved?.(clientId); }
+        try {
+            await api<{audit:unknown;findings:unknown[]}>('scan/save', {clientId, audit:result.audit});
+            setSaved(true); onSaved?.(clientId);
+        }
         catch(e) { setError((e as Error).message); } finally { setSaving(false); }
     }
 
@@ -97,6 +211,7 @@ function SingleScanPanel({clients, busy, onBusy, onSaved}: Props) {
             <FormCard url={url} setUrl={setUrl} clientId={clientId} setClientId={setClientId} clients={clients} busy={busy} onSubmit={runScan}
                 label="Scan a single page" hint="Fetch, analyse and score one URL instantly." error={error}/>
 
+            {!result && !busy && <ScannerEmptyState mode="single" />}
             {result && (
                 <>
                     <ResultBar url={result.url} status={result.status} fetchedAt={result.fetchedAt}
@@ -105,6 +220,9 @@ function SingleScanPanel({clients, busy, onBusy, onSaved}: Props) {
                     {!clientId && result.audit && <SaveHint/>}
                     <FlagSection flags={result.flags}/>
                     {result.aiBotAccess && <AiBotAccessSection access={result.aiBotAccess}/>}
+                    {result.techStack && <TechStackSection stack={result.techStack}/>}
+                    {result.rgps && <RgpsSection rgps={result.rgps} url={result.url}/>}
+                    {result.rawVsRendered && <RawVsRenderedSection delta={result.rawVsRendered}/>}
                     {result.sitemapInfo && <SitemapSection info={result.sitemapInfo}/>}
                     {result.audit ? (
                         <div className="content-grid">
@@ -115,9 +233,9 @@ function SingleScanPanel({clients, busy, onBusy, onSaved}: Props) {
                                 </div>
                                 <SubScoreBar seoScore={result.audit.subScores?.seoScore ?? null} aeoScore={result.audit.subScores?.aeoScore ?? null} geoScore={result.audit.subScores?.geoScore ?? null}/>
                                 <div style={{display:'flex',gap:16,padding:'8px 24px 4px',fontSize:11,color:'#8b9aa6',lineHeight:1.5}}>
-                                    <span><strong style={{color:'#3b82d4'}}>SEO</strong> — Crawl, structure, schema, freshness</span>
-                                    <span><strong style={{color:'#7c5cd8'}}>AEO</strong> — Content, entity, evidence</span>
-                                    <span><strong style={{color:'#0d8073'}}>GEO</strong> — AI visibility (observations needed)</span>
+                                    <span><strong style={{color:'#3b82d4'}}>SEO</strong> — Technical crawlability (from HTML)</span>
+                                    <span><strong style={{color:'#7c5cd8'}}>AEO</strong> — Content answer-readiness (from HTML)</span>
+                                    <span><strong style={{color:'#0d8073'}}>GEO</strong> — Live AI visibility (probe runs required)</span>
                                 </div>
                                 <div className="dimensions">
                                     {result.audit.dimensions.map(d=>(
@@ -192,7 +310,7 @@ function SiteScanPanel({clients, busy, onBusy, onSaved}: Props) {
         if (!page.audit || !clientId || savingUrl) return;
         setSavingUrl(page.url);
         try {
-            await api('scan/save', {clientId, audit:{...page.audit}});
+            await api<{audit:unknown;findings:unknown[]}>('scan/save', {clientId, audit:{...page.audit}});
             setSavedUrls(s => new Set([...s, page.url]));
             onSaved?.(clientId);
         } catch(e) { setError((e as Error).message); } finally { setSavingUrl(null); }
@@ -214,6 +332,7 @@ function SiteScanPanel({clients, busy, onBusy, onSaved}: Props) {
                 </div>
             )}
 
+            {!result && !busy && <ScannerEmptyState mode="site" />}
             {result && (
                 <>
                     {/* Site summary bar */}
@@ -330,35 +449,56 @@ function FormCard({url, setUrl, clientId, setClientId, clients, busy, onSubmit, 
     label:string; hint:string; error:string; submitLabel?:string;
 }) {
     return (
-        <section className="panel" style={{marginBottom:20,padding:0,overflow:'hidden'}}>
-            <div style={{padding:'18px 24px 16px',borderBottom:'1px solid #e5e7eb'}}>
-                <div style={{display:'flex',alignItems:'center',gap:9,marginBottom:3}}>
-                    <Search size={16} color="#0d8073"/>
-                    <h2 style={{fontSize:'1rem',fontWeight:650}}>{label}</h2>
+        <section className="panel" style={{marginBottom:16,padding:0,overflow:'hidden'}}>
+            <div className="panel-heading">
+                <div style={{display:'flex',alignItems:'center',gap:9}}>
+                    <Search size={16} color="var(--interactive)"/>
+                    <div>
+                        <h2>{label}</h2>
+                        <p style={{marginTop:2}}>{hint}</p>
+                    </div>
                 </div>
-                <p style={{fontSize:'.83rem',color:'#57606a',margin:0}}>{hint}</p>
             </div>
-            <form onSubmit={onSubmit} style={{padding:'18px 24px 20px'}}>
-                <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'flex-end'}}>
+            <form onSubmit={onSubmit} style={{padding:'16px 24px 20px'}}>
+                <div style={{display:'flex',gap:12,flexWrap:'wrap',alignItems:'flex-end'}}>
                     <label style={{flex:'1 1 280px',margin:0}}>
-                        <span style={{display:'block',fontSize:'.73rem',fontWeight:700,letterSpacing:'.07em',color:'#57606a',textTransform:'uppercase',marginBottom:5}}>URL</span>
-                        <input type="url" value={url} onChange={e=>setUrl(e.target.value)} placeholder="https://example.com" required disabled={busy} style={{width:'100%',border:'1.5px solid #cfdae2',borderRadius:7,padding:'9px 12px',fontSize:'.9rem',background:'#fff'}}/>
+                        <span style={{display:'block',fontSize:11,fontWeight:700,letterSpacing:'.07em',color:'#6b7280',textTransform:'uppercase',marginBottom:6}}>URL</span>
+                        <div style={{position:'relative',display:'flex',alignItems:'center'}}>
+                            <Globe size={14} color="#9ca3af" style={{position:'absolute',left:11,pointerEvents:'none'}}/>
+                            <input type="url" value={url} onChange={e=>setUrl(e.target.value)}
+                                placeholder="https://example.com" required disabled={busy}
+                                style={{width:'100%',border:'1.5px solid #e4e6ef',borderRadius:8,padding:'9px 12px 9px 32px',fontSize:14,background:'#fafafa',color:'#1a1d2e',outline:'none'}}
+                                onFocus={e=>(e.currentTarget.style.borderColor='#4f6ef7')}
+                                onBlur={e=>(e.currentTarget.style.borderColor='#e4e6ef')}
+                            />
+                        </div>
                     </label>
                     {clients.length>0&&(
-                        <label style={{flex:'0 1 185px',margin:0}}>
-                            <span style={{display:'block',fontSize:'.73rem',fontWeight:700,letterSpacing:'.07em',color:'#57606a',textTransform:'uppercase',marginBottom:5}}>Match client <span style={{fontWeight:400,textTransform:'none'}}>(opt.)</span></span>
-                            <select value={clientId} onChange={e=>setClientId(e.target.value)} disabled={busy} style={{width:'100%',border:'1.5px solid #cfdae2',borderRadius:7,padding:'9px 12px',fontSize:'.9rem',background:'#fff'}}>
-                                <option value="">— none —</option>
-                                {clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
-                            </select>
+                        <label style={{flex:'0 1 200px',margin:0}}>
+                            <span style={{display:'block',fontSize:11,fontWeight:700,letterSpacing:'.07em',color:'#6b7280',textTransform:'uppercase',marginBottom:6}}>
+                                Match client <span style={{fontWeight:400,textTransform:'none',fontSize:10}}>(opt.)</span>
+                            </span>
+                            <div style={{position:'relative'}}>
+                                <select value={clientId} onChange={e=>setClientId(e.target.value)} disabled={busy}
+                                    style={{width:'100%',appearance:'none',WebkitAppearance:'none',border:'1.5px solid #e4e6ef',borderRadius:8,padding:'9px 36px 9px 12px',fontSize:14,background:'#fafafa',color:'#1a1d2e',outline:'none',cursor:'pointer'}}>
+                                    <option value="">— none —</option>
+                                    {clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+                                </select>
+                                <svg viewBox="0 0 20 20" width={15} height={15}
+                                    style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',pointerEvents:'none',color:'#6b7280'}}
+                                    fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                                    <polyline points="5 8 10 13 15 8"/>
+                                </svg>
+                            </div>
                         </label>
                     )}
-                    <button className="primary" type="submit" disabled={busy} style={{alignSelf:'flex-end',display:'flex',alignItems:'center',gap:7,padding:'9px 20px',fontSize:'.9rem',borderRadius:7,fontWeight:600,whiteSpace:'nowrap'}}>
+                    <button className="primary" type="submit" disabled={busy}
+                        style={{alignSelf:'flex-end',display:'flex',alignItems:'center',gap:7,whiteSpace:'nowrap'}}>
                         {busy?<><Loader size={14} style={{animation:'spin 1s linear infinite'}}/> Working…</>:<><Search size={14}/> {submitLabel}</>}
                     </button>
                 </div>
                 {error&&<div className="error" role="alert" style={{marginTop:12}}>{error}</div>}
-                <p style={{margin:'12px 0 0',fontSize:'.76rem',color:'#8b9aa6',lineHeight:1.5}}>Results reflect what an HTTP crawler sees — JavaScript-rendered content is not assessed.</p>
+                <p style={{margin:'10px 0 0',fontSize:12,color:'#6b7280',lineHeight:1.5}}>Results reflect what an HTTP crawler sees — JavaScript-rendered content is not assessed.</p>
             </form>
         </section>
     );
@@ -454,6 +594,301 @@ function AiBotAccessSection({access}: {access: AiBotAccess}) {
     );
 }
 
+
+// ── RGPS Section ─────────────────────────────────────────────────────────────
+
+const STEP_COLORS = ['#3b82d4', '#7c5cd8', '#0d8073'] as const;
+const STEP_LABELS = ['Lift it out cleanly', 'Match it to the question', 'Trust it and cite it'];
+
+function RgpsScoreMeter({total, passBar, passed, mandatoryFail}: {total: number; passBar: number; passed: boolean; mandatoryFail: string | null}) {
+    const pct = Math.min(100, (total / 25) * 100);
+    const passLinePct = (passBar / 25) * 100;
+    const color = passed ? '#15803d' : mandatoryFail ? '#b91c1c' : '#d97706';
+    const bg = passed ? '#dcfce7' : mandatoryFail ? '#fee2e2' : '#fef3c7';
+    return (
+        <div style={{display:'flex',alignItems:'center',gap:20,padding:'16px 24px 12px',flexWrap:'wrap'}}>
+            <div style={{textAlign:'center',minWidth:72}}>
+                <div style={{fontSize:'2rem',fontWeight:800,color,fontFamily:'IBM Plex Mono,monospace',lineHeight:1}}>{total}</div>
+                <div style={{fontSize:11,color:'#57606a',fontWeight:600}}>/25 pts</div>
+                <div style={{marginTop:5,padding:'3px 10px',background:bg,color,borderRadius:20,fontSize:11,fontWeight:700,display:'inline-block'}}>
+                    {passed ? 'PASS' : mandatoryFail ? `FAIL — ${mandatoryFail} zero` : 'FAIL'}
+                </div>
+            </div>
+            <div style={{flex:1,minWidth:200}}>
+                <div style={{position:'relative',height:10,background:'#f0f2f5',borderRadius:5,overflow:'visible',marginBottom:6}}>
+                    <div style={{width:`${pct}%`,height:'100%',background:color,borderRadius:5,transition:'width .4s'}}/>
+                    {/* Pass bar marker */}
+                    <div style={{position:'absolute',top:-4,left:`${passLinePct}%`,width:2,height:18,background:'#374151',borderRadius:1}}/>
+                    <div style={{position:'absolute',top:14,left:`${passLinePct}%`,fontSize:9,color:'#374151',fontWeight:700,transform:'translateX(-50%)',whiteSpace:'nowrap'}}>bar {passBar}</div>
+                </div>
+                <div style={{display:'flex',gap:6,fontSize:11,color:'#57606a',marginTop:14}}>
+                    {[8,11,6].map((max,i)=>(
+                        <span key={i} style={{padding:'2px 8px',borderRadius:12,background:'#f7f8fa',border:`1px solid #e4e6ef`,color:STEP_COLORS[i],fontWeight:600}}>
+                            Step {i+1}: {STEP_LABELS[i].split(' ').slice(0,2).join(' ')} · {max}pts max
+                        </span>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function RgpsDimPill({d}: {d: RgpsDimensionResult}) {
+    const pct = d.weight > 0 ? (d.score / d.weight) * 100 : 0;
+    const isZeroMandatory = d.mandatory && d.score === 0;
+    const bg = isZeroMandatory ? '#fee2e2' : pct === 100 ? '#dcfce7' : pct >= 50 ? '#fef3c7' : '#f7f8fa';
+    const textColor = isZeroMandatory ? '#b91c1c' : pct === 100 ? '#15803d' : pct >= 50 ? '#b45309' : '#374151';
+    const borderColor = isZeroMandatory ? '#fca5a5' : pct === 100 ? '#86efac' : pct >= 50 ? '#fde68a' : '#e4e6ef';
+    return (
+        <div style={{background:bg,border:`1px solid ${borderColor}`,borderRadius:8,padding:'10px 12px',minWidth:100,flex:'0 0 auto'}}>
+            <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:4}}>
+                <span style={{fontSize:12,fontWeight:800,color:textColor,fontFamily:'IBM Plex Mono,monospace'}}>{d.id}</span>
+                {d.mandatory && <span style={{fontSize:9,fontWeight:700,letterSpacing:'.06em',color:isZeroMandatory?'#b91c1c':'#57606a',background:isZeroMandatory?'#fecaca':'#f0f2f5',borderRadius:10,padding:'1px 5px'}}>MANDATORY</span>}
+                {!d.mandatory && <span style={{fontSize:9,fontWeight:700,letterSpacing:'.06em',color:'#4f6ef7',background:'#eef2ff',borderRadius:10,padding:'1px 5px'}}>REC</span>}
+            </div>
+            <div style={{fontSize:11,fontWeight:600,color:'#1a1d2e',marginBottom:3,lineHeight:1.3}}>{d.name}</div>
+            <div style={{fontSize:13,fontWeight:700,color:textColor,fontFamily:'IBM Plex Mono,monospace'}}>{d.score}<span style={{fontSize:10,fontWeight:400,color:'#57606a'}}>/{d.weight}</span></div>
+        </div>
+    );
+}
+
+type RgpsRewriteState = {status:'idle'|'loading'|'done'|'error'; rewritten?:string; scoreBefore?:RgpsResult; scoreAfter?:RgpsResult; pointsGained?:number; dimensionsMoved?:number; error?:string};
+
+function RgpsSection({rgps, url}: {rgps: RgpsResult; url?: string}) {
+    const [expanded, setExpanded] = useState(false);
+    const [rewrite, setRewrite] = useState<RgpsRewriteState>({status:'idle'});
+    const [copied, setCopied] = useState(false);
+
+    async function runRewrite() {
+        if (!url) return;
+        setRewrite({status:'loading'});
+        try {
+            const r = await fetch('/api/v1/rgps/rewrite', {
+                method:'POST', headers:{'Content-Type':'application/json'},
+                body: JSON.stringify({url, provider:'openai'}),
+            });
+            const d = await r.json() as RgpsRewriteState & {error?:string};
+            if (!r.ok) { setRewrite({status:'error', error:d.error||'Rewrite failed'}); return; }
+            setRewrite({status:'done', rewritten:d.rewritten, scoreBefore:d.scoreBefore, scoreAfter:d.scoreAfter, pointsGained:d.pointsGained, dimensionsMoved:d.dimensionsMoved});
+        } catch(e) { setRewrite({status:'error', error:(e as Error).message}); }
+    }
+
+    function copyRewrite() {
+        if (!rewrite.rewritten) return;
+        navigator.clipboard.writeText(rewrite.rewritten);
+        setCopied(true); setTimeout(()=>setCopied(false), 2000);
+    }
+
+    return (
+        <section className="panel" style={{marginBottom:16,borderLeft:`3px solid ${rgps.passed ? '#15803d' : '#b91c1c'}`}}>
+            <div className="panel-heading">
+                <div>
+                    <h2 style={{display:'flex',alignItems:'center',gap:7}}>
+                        <FileText size={15}/> Retrieval-Grade Passage Standard
+                        <span style={{fontSize:11,fontWeight:600,color:'#57606a',background:'#f0f2f5',borderRadius:10,padding:'2px 8px',marginLeft:4}}>{rgps.version}</span>
+                        {rgps.ymyl && <span style={{fontSize:11,fontWeight:700,color:'#d97706',background:'#fef3c7',borderRadius:10,padding:'2px 8px'}}>YMYL</span>}
+                    </h2>
+                    <p>Passage-level AI retrieval readiness — 12 dimensions, 25 points. Pass bar: {rgps.passBar}/25.</p>
+                </div>
+                {rgps.passed ? <CheckCircle size={18} color="#15803d"/> : <AlertTriangle size={18} color="#b91c1c"/>}
+            </div>
+            <RgpsScoreMeter total={rgps.total} passBar={rgps.passBar} passed={rgps.passed} mandatoryFail={rgps.mandatoryFail}/>
+
+            {/* Step breakdown bars */}
+            <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:1,borderTop:'1px solid #f0f2f5',borderBottom:'1px solid #f0f2f5',margin:'0 0 0'}}>
+                {rgps.stepBreakdown.map((s,i)=>(
+                    <div key={s.step} style={{padding:'10px 16px',borderRight:i<2?'1px solid #f0f2f5':'none'}}>
+                        <div style={{fontSize:10,fontWeight:700,letterSpacing:'.07em',textTransform:'uppercase',color:STEP_COLORS[i],marginBottom:4}}>{s.label}</div>
+                        <div style={{display:'flex',alignItems:'baseline',gap:4}}>
+                            <span style={{fontSize:'1.25rem',fontWeight:800,color:'#1a1d2e',fontFamily:'IBM Plex Mono,monospace'}}>{s.score}</span>
+                            <span style={{fontSize:12,color:'#57606a'}}>/{s.max} pts</span>
+                        </div>
+                        <div style={{marginTop:5,background:'#f0f2f5',borderRadius:3,height:4,overflow:'hidden'}}>
+                            <div style={{width:`${(s.score/s.max)*100}%`,height:'100%',background:STEP_COLORS[i],borderRadius:3}}/>
+                        </div>
+                    </div>
+                ))}
+            </div>
+
+            {/* Mandatory fail call-out */}
+            {rgps.mandatoryFail && (
+                <div style={{margin:'12px 24px 0',padding:'10px 14px',background:'#fef2f2',border:'1px solid #fecaca',borderRadius:7,fontSize:12,color:'#991b1b',lineHeight:1.6}}>
+                    <strong>Automatic fail:</strong> {rgps.mandatoryFail} scored zero — passage fails regardless of total. Fix this first.
+                </div>
+            )}
+
+            {/* Dimension pills — top issues */}
+            <div style={{padding:'12px 24px 4px'}}>
+                <div style={{fontSize:11,fontWeight:700,letterSpacing:'.07em',textTransform:'uppercase',color:'#6b7280',marginBottom:8}}>
+                    {expanded ? 'All 12 dimensions' : 'Lowest-scoring dimensions'}
+                </div>
+                <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
+                    {(expanded
+                        ? rgps.dimensions
+                        : [...rgps.dimensions].sort((a,b)=>a.score/a.weight - b.score/b.weight).slice(0,6)
+                    ).map(d => <RgpsDimPill key={d.id} d={d}/>)}
+                </div>
+                <button onClick={()=>setExpanded(v=>!v)} style={{marginTop:8,background:'none',border:'none',color:'#4f6ef7',fontSize:12,fontWeight:600,cursor:'pointer',padding:'4px 0'}}>
+                    {expanded ? 'Show fewer' : 'Show all 12 dimensions'}
+                </button>
+            </div>
+
+            {/* Top action items */}
+            {rgps.dimensions.filter(d=>d.action).length > 0 && (
+                <div style={{padding:'4px 24px 16px'}}>
+                    <div style={{fontSize:11,fontWeight:700,letterSpacing:'.07em',textTransform:'uppercase',color:'#6b7280',marginBottom:8}}>Top remediation actions</div>
+                    {rgps.dimensions
+                        .filter(d=>d.action)
+                        .sort((a,b)=> (b.weight - b.score) - (a.weight - a.score))
+                        .slice(0,4)
+                        .map(d=>(
+                            <div key={d.id} style={{display:'flex',gap:10,padding:'7px 0',borderTop:'1px solid #f0f2f5',alignItems:'flex-start'}}>
+                                <span style={{fontSize:11,fontWeight:700,color:d.mandatory&&d.score===0?'#b91c1c':'#57606a',fontFamily:'IBM Plex Mono,monospace',minWidth:28,paddingTop:1}}>{d.id}</span>
+                                <div>
+                                    <div style={{fontSize:12,fontWeight:600,color:'#1a1d2e',marginBottom:2}}>{d.action}</div>
+                                    <div style={{fontSize:11,color:'#57606a'}}>{d.evidence}</div>
+                                </div>
+                            </div>
+                        ))
+                    }
+                </div>
+            )}
+
+            {/* RGPS Rewrite Assistant */}
+            {!rgps.passed && url && (
+                <div style={{padding:'0 24px 16px',borderTop:'1px solid #f0f2f5',marginTop:8}}>
+                    <div style={{display:'flex',alignItems:'center',gap:12,paddingTop:12,flexWrap:'wrap'}}>
+                        <button
+                            onClick={runRewrite}
+                            disabled={rewrite.status==='loading'}
+                            style={{display:'flex',alignItems:'center',gap:7,padding:'8px 16px',background:'#4f6ef7',color:'#fff',border:'none',borderRadius:7,fontSize:12,fontWeight:700,cursor:rewrite.status==='loading'?'wait':'pointer',opacity:rewrite.status==='loading'?0.7:1}}>
+                            {rewrite.status==='loading' ? <><Loader size={13}/> Rewriting…</> : <><Zap size={13}/> Rewrite with AI</>}
+                        </button>
+                        <span style={{fontSize:11,color:'#57606a'}}>Uses only facts already on the page — no hallucination</span>
+                    </div>
+                    {rewrite.status==='error' && <div style={{marginTop:8,fontSize:12,color:'#b91c1c'}}>{rewrite.error}</div>}
+                    {rewrite.status==='done' && rewrite.rewritten && (
+                        <div style={{marginTop:12,border:'1px solid #e4e6ef',borderRadius:8,overflow:'hidden'}}>
+                            <div style={{background:'#f7f8fa',padding:'8px 14px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                                <div style={{display:'flex',gap:16,alignItems:'center'}}>
+                                    <span style={{fontSize:11,fontWeight:700,color:'#57606a',textTransform:'uppercase',letterSpacing:'.06em'}}>AI rewrite</span>
+                                    {rewrite.pointsGained !== undefined && rewrite.pointsGained > 0 && (
+                                        <span style={{fontSize:11,fontWeight:700,color:'#15803d',background:'#dcfce7',padding:'2px 8px',borderRadius:12}}>
+                                            +{rewrite.pointsGained} pts — {rewrite.scoreAfter?.total}/{rewrite.scoreAfter?.passBar} bar {rewrite.scoreAfter?.passed?'PASS':'closer'}
+                                        </span>
+                                    )}
+                                    {rewrite.dimensionsMoved !== undefined && rewrite.dimensionsMoved > 0 && (
+                                        <span style={{fontSize:11,color:'#57606a'}}>{rewrite.dimensionsMoved} dimension{rewrite.dimensionsMoved>1?'s':''} improved</span>
+                                    )}
+                                </div>
+                                <button onClick={copyRewrite} style={{fontSize:11,fontWeight:600,color:'#4f6ef7',background:'none',border:'none',cursor:'pointer'}}>
+                                    {copied ? 'Copied!' : 'Copy text'}
+                                </button>
+                            </div>
+                            <div style={{padding:'12px 14px',fontSize:13,lineHeight:1.7,color:'#1a1d2e',whiteSpace:'pre-wrap',maxHeight:320,overflowY:'auto'}}>
+                                {rewrite.rewritten}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+        </section>
+    );
+}
+
+// ── Raw vs Rendered DOM Section ───────────────────────────────────────────────
+
+function RawVsRenderedSection({delta}: {delta: RawVsRenderedDelta}) {
+    const hasIssues = delta.jsOnlyContent || delta.headingsOnlyInRendered.length > 0
+        || delta.schemaOnlyInRendered.length > 0 || delta.headingOrderIssues.length > 0;
+    const borderColor = hasIssues ? '#d97706' : '#15803d';
+    return (
+        <section className="panel" style={{marginBottom:16,borderLeft:`3px solid ${borderColor}`}}>
+            <div className="panel-heading">
+                <div>
+                    <h2 style={{display:'flex',alignItems:'center',gap:7}}><GitCompare size={15}/> Raw vs rendered DOM</h2>
+                    <p>Compares server HTML with JS-rendered output — flags content only visible after JavaScript runs.</p>
+                </div>
+                {hasIssues ? <AlertTriangle size={18} color="#d97706"/> : <CheckCircle size={18} color="#15803d"/>}
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:1,borderTop:'1px solid #f0f2f5',borderBottom:'1px solid #f0f2f5'}}>
+                {[
+                    {label:'Raw HTML text', value:`${delta.rawTextLen.toLocaleString()} chars`},
+                    {label:'Rendered text', value:`${delta.renderedTextLen.toLocaleString()} chars`},
+                ].map((m,i)=>(
+                    <div key={m.label} style={{padding:'10px 16px',borderRight:i===0?'1px solid #f0f2f5':'none'}}>
+                        <div style={{fontSize:11,fontWeight:700,letterSpacing:'.07em',textTransform:'uppercase',color:'#6b7280',marginBottom:3}}>{m.label}</div>
+                        <div style={{fontSize:'1.125rem',fontWeight:700,color:'#1a1d2e',fontFamily:'IBM Plex Mono,monospace'}}>{m.value}</div>
+                    </div>
+                ))}
+            </div>
+            <div style={{padding:'12px 24px 16px',display:'flex',flexDirection:'column',gap:8}}>
+                {delta.jsOnlyContent && (
+                    <div style={{padding:'8px 12px',background:'#fef3c7',border:'1px solid #fde68a',borderRadius:6,fontSize:12,color:'#92400e'}}>
+                        <strong>JS-injected content detected</strong> — rendered page is {Math.round((delta.renderedTextLen/delta.rawTextLen - 1)*100)}% larger than raw HTML. AI crawlers that cannot execute JavaScript will miss this content.
+                    </div>
+                )}
+                {delta.headingOrderIssues.map((issue,i)=>(
+                    <div key={i} style={{padding:'8px 12px',background:'#fef3c7',border:'1px solid #fde68a',borderRadius:6,fontSize:12,color:'#92400e'}}>
+                        <strong>Heading order:</strong> {issue}
+                    </div>
+                ))}
+                {delta.headingsOnlyInRendered.length > 0 && (
+                    <div style={{padding:'8px 12px',background:'#fef3c7',border:'1px solid #fde68a',borderRadius:6,fontSize:12,color:'#92400e'}}>
+                        <strong>{delta.headingsOnlyInRendered.length} heading(s) only in rendered DOM</strong> — AI crawlers on raw HTML will not see: {delta.headingsOnlyInRendered.slice(0,3).join(', ')}
+                    </div>
+                )}
+                {delta.schemaOnlyInRendered.length > 0 && (
+                    <div style={{padding:'8px 12px',background:'#fef3c7',border:'1px solid #fde68a',borderRadius:6,fontSize:12,color:'#92400e'}}>
+                        <strong>Schema types JS-only:</strong> {delta.schemaOnlyInRendered.join(', ')} — move JSON-LD to static HTML.
+                    </div>
+                )}
+                {!hasIssues && (
+                    <div style={{padding:'8px 12px',background:'#f0fdf4',border:'1px solid #86efac',borderRadius:6,fontSize:12,color:'#15803d'}}>
+                        No JavaScript penalty detected — main content, headings and schema are present in raw server HTML.
+                    </div>
+                )}
+            </div>
+        </section>
+    );
+}
+
+
+function TechStackSection({stack}: {stack: TechStack}) {
+    if (!stack.signals.length) return null;
+    const catColor: Record<string, string> = {
+        cms: '#4f6ef7', framework: '#7c5cd8', ecommerce: '#d97706',
+        hosting: '#0891b2', analytics: '#16a34a', cdn: '#475569', server: '#374151',
+    };
+    const catBg: Record<string, string> = {
+        cms: '#eef2ff', framework: '#f5f3ff', ecommerce: '#fefce8',
+        hosting: '#ecfeff', analytics: '#f0fdf4', cdn: '#f8fafc', server: '#f9fafb',
+    };
+    return (
+        <section className="panel" style={{marginBottom:16,borderLeft:'3px solid #4f6ef7'}}>
+            <div className="panel-heading">
+                <div>
+                    <h2 style={{display:'flex',alignItems:'center',gap:7}}><Cpu size={15}/> Tech stack detected</h2>
+                    <p>{stack.summary}</p>
+                </div>
+            </div>
+            <div style={{display:'flex',flexWrap:'wrap',gap:8,padding:'4px 24px 16px'}}>
+                {stack.signals.map(s => (
+                    <div key={s.name} style={{
+                        display:'flex',alignItems:'center',gap:6,padding:'6px 12px',borderRadius:20,fontSize:12,fontWeight:600,
+                        background: catBg[s.category] ?? '#f0f2f5',
+                        color: catColor[s.category] ?? '#374151',
+                        border: `1px solid ${catColor[s.category] ?? '#e4e6ef'}22`,
+                    }}>
+                        {s.name}
+                        <span style={{fontSize:10,opacity:.7,textTransform:'uppercase',letterSpacing:'.04em'}}>{s.category}</span>
+                        {s.confidence === 'low' && <span style={{fontSize:10,opacity:.6}}>~</span>}
+                    </div>
+                ))}
+            </div>
+        </section>
+    );
+}
 
 function SitemapSection({info}: {info: SitemapInfo}) {
     const good = info.fetched && info.urlCount > 0;

@@ -11,7 +11,10 @@ const messageSchema = z.object({
         text: z.string().optional(),
     }).passthrough()),
     stop_reason: z.string().nullable().optional(),
+    usage: z.object({input_tokens: z.number().optional(), output_tokens: z.number().optional()}).optional(),
 }).passthrough();
+// Claude claude-opus-4-5: ~$15/M input, $75/M output tokens (approximate)
+function claudeCost(input: number, output: number) { return (input * 15 + output * 75) / 1_000_000; }
 
 function safeUrl(value: string) {
     try {const u = new URL(value); return ['https:','http:'].includes(u.protocol) && !u.username && !u.password;}
@@ -103,6 +106,10 @@ export class ClaudeProvider implements AIProvider {
         if (!response.trim()) throw new CollectionError('Claude returned an empty answer. No observation was saved.');
         if (response.length > 12000) throw new CollectionError('Claude returned an oversized answer. No observation was saved.');
 
+        const inputTok = data.usage?.input_tokens ?? 0;
+        const outputTok = data.usage?.output_tokens ?? 0;
+        const tokenCount = (inputTok + outputTok) || undefined;
+        const estimatedCostUsd = tokenCount ? claudeCost(inputTok, outputTok) : undefined;
         return {
             engine: this.id,
             surface: 'Messages API · web search',
@@ -112,6 +119,8 @@ export class ClaudeProvider implements AIProvider {
             citations: [...citations],
             annotations: [],
             observedAt: new Date().toISOString(),
+            tokenCount,
+            estimatedCostUsd,
         };
     }
 }

@@ -9,6 +9,7 @@ export type Client = {
     competitors: string[];
     market: string;
     created: string;
+    monthlyBudgetUsd?: number;   // ops-6/cst-2: optional monthly AI spend cap in USD
 };
 export type DimensionItem = {
     label: string;
@@ -48,6 +49,8 @@ export type ProbeResult = {
     citesClientDomain: boolean;
     competitorsMentioned: string[];  // which competitors appear in response
     probedAt: string;     // ISO
+    tokenCount?: number;             // total tokens used (prompt + completion)
+    estimatedCostUsd?: number;       // estimated cost in USD for this probe
 };
 
 export type ProbeRun = {
@@ -63,6 +66,11 @@ export type ProbeRun = {
     shareOfVoice: {competitor: string; mentionRate: number}[];  // competitor vs brand
     citingSources: {domain: string; count: number}[];           // top citing domains across responses
     engines: string[];
+    totalTokens?: number;            // sum of tokenCount across all results
+    totalEstimatedCostUsd?: number;  // sum of estimatedCostUsd across all results
+    failedCount?: number;            // results where response was empty (provider error)
+    failureRate?: number;            // % of tasks that failed (0-100)
+    costByEngine?: {engine: string; tokens: number; estimatedCostUsd: number}[];
 };
 
 export type CompetitorScanResult = {
@@ -71,7 +79,10 @@ export type CompetitorScanResult = {
     score: number;
     coverage: number;
     subScores: SubScores;
-    topGaps: string[];   // top 3 missing dimension names
+    topGaps: string[];              // top 3 missing dimension names
+    citationSources?: string[];     // cmp-3: top external domains citing this competitor
+    topTopics?: string[];           // cmp-4: topic areas the competitor covers that client doesn't
+    dimensionScores?: {id: string; name: string; score: number | null}[];  // all dimension scores for gap comparison
 };
 
 export type AuditFinding = {
@@ -103,6 +114,45 @@ export type Audit = {
     dimensions: Dimension[];
     subScores: SubScores;
 };
+export type FindingStatus = 'open' | 'approved' | 'rejected' | 'implemented' | 'resolved';
+export type FindingSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info';
+
+export type Finding = {
+    id: string;
+    clientId: string;
+    auditId: string;        // which audit produced this finding
+    url: string;
+    dimensionId: string;    // scoring.ts dimension id (e.g. 'schema', 'query')
+    dimensionName: string;
+    severity: FindingSeverity;
+    title: string;          // short one-line description
+    evidence: string;       // what was found (from dimension.evidence)
+    action: string;         // what to fix (from dimension.action)
+    missing: string[];      // specific missing items (from dimension.details.missing)
+    status: FindingStatus;
+    owner?: string;         // assigned team / person
+    resolvedAuditId?: string; // audit that confirmed this was fixed
+    scoreBefore?: number;   // dimension score when finding was opened
+    scoreAfter?: number;    // dimension score after retest
+    created: string;
+    updated: string;
+};
+
+export type Recommendation = {
+    id: string;
+    clientId: string;
+    findingId: string;
+    title: string;
+    proposal: string;       // specific change to make
+    owner: string;          // 'content' | 'engineering' | 'seo' | 'devops'
+    effort: 'low' | 'medium' | 'high';
+    impact: 'low' | 'medium' | 'high';
+    status: 'draft' | 'approved' | 'rejected' | 'implemented';
+    reviewNote?: string;    // reviewer comment on approve/reject
+    created: string;
+    updated: string;
+};
+
 export type Observation = {
     id: string;
     clientId: string;
@@ -117,6 +167,8 @@ export type Observation = {
     source: 'manual-import' | 'ai-provider';
     providerResponseId?: string;
     annotations?: {url: string; startIndex: number; endIndex: number}[];
+    tokenCount?: number;
+    estimatedCostUsd?: number;
 };
 export interface Repository {
     listClients(owner: string): Promise<Client[]>;
@@ -203,3 +255,24 @@ export type Alert = {
     enabled: boolean;
     created: string;
 };
+
+export type AuditLogEntry = {
+    id: string;
+    owner: string;
+    action: 'client.create' | 'client.delete' | 'audit.save' | 'finding.update' | 'recommendation.update' | 'probe.run' | 'scan.save';
+    entityType: string;
+    entityId: string;
+    clientId?: string;
+    detail: Record<string, unknown>;
+    created: string;
+};
+
+export interface FindingStore {
+    saveFindings(owner: string, clientId: string, findings: Finding[]): void;
+    listFindings(owner: string, clientId: string, status?: FindingStatus): Finding[];
+    getFinding(owner: string, clientId: string, id: string): Finding | null;
+    updateFinding(owner: string, id: string, patch: Partial<Pick<Finding, 'status' | 'owner' | 'resolvedAuditId' | 'scoreAfter'>>): Finding | null;
+    saveRecommendation(owner: string, rec: Recommendation): void;
+    listRecommendations(owner: string, clientId: string): Recommendation[];
+    updateRecommendation(owner: string, id: string, patch: Partial<Pick<Recommendation, 'status' | 'reviewNote' | 'owner' | 'effort' | 'impact'>>): Recommendation | null;
+}

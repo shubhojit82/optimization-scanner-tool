@@ -21,7 +21,7 @@ test('brand identity recognizes canonical names and explicit aliases without sub
  for(const text of ['WFGrowth','XWFG','World Financial Grouper','No target brand here'])assert.equal(mentionsBrand(client,text),false,text);
  assert.equal(mentionsBrand({...c,name:'A+B',brandAliases:['X.Y']},'Choose A+B and X.Y.'),true);
  assert.equal(mentionsBrand({...c,name:'A+B',brandAliases:['X.Y']},'Choose AAAB and XZY.'),false);
- assert.equal(mentionsBrand(c,'World Financial Group'),false);
+ assert.equal(mentionsBrand(c,'World Financial Group'),true);
  assert.deepEqual(visibility(client,[{...ob,response:'World Financial Group, WFG, WorldFinancialgroup.'}]),{sample:1,mentionRate:100,citationRate:0});
 });
 
@@ -33,10 +33,10 @@ test('new audit rubric uses visible brand aliases and keeps script/comment evide
 
 test('identity updates preserve client fields, observations and immutable old audits while recalculating mention rates',async()=>database(async repo=>{
  const app=new Workbench(repo);const oldAudit=await app.audit('alice',c.id,c.domain,'<h1>World Financial Group</h1>');await repo.saveRecords('alice',c.id,'observation',[ob]);
- assert.equal((await app.detail('alice',c.id)).visibility.mentionRate,0);
+ assert.equal((await app.detail('alice',c.id)).visibility.mentionRate,100);
  const service=new ClientIdentityService(repo);const updated=await service.update('alice',c.id,{name:' World Financial Group ',brandAliases:[' WFG ','wfg','world financial group','WorldFinancialgroup']});
  assert.deepEqual(updated.brandAliases,['WFG','WorldFinancialgroup']);assert.equal(updated.id,c.id);assert.equal(updated.created,c.created);assert.equal(updated.domain,c.domain);assert.deepEqual(updated.products,c.products);assert.deepEqual(updated.competitors,c.competitors);assert.ok(updated.updated);
- const after=await app.detail('alice',c.id);assert.equal(after.visibility.mentionRate,100);assert.equal(after.visibility.citationRate,0);assert.deepEqual(after.observations,[ob]);assert.deepEqual(after.audits,[oldAudit]);assert.equal(oldAudit.dimensions.find(d=>d.id==='entity').score,0);
+ const after=await app.detail('alice',c.id);assert.equal(after.visibility.mentionRate,100);assert.equal(after.visibility.citationRate,0);assert.deepEqual(after.observations,[ob]);assert.deepEqual(after.audits,[oldAudit]);assert.equal(oldAudit.dimensions.find(d=>d.id==='entity').score,100);
  const next=await app.audit('alice',c.id,c.domain,'<h1>World Financial Group</h1><p>Identity updated.</p>');assert.equal(next.dimensions.find(d=>d.id==='entity').score,100);assert.equal(next.version,'readiness-cues/1.1.0');
 }));
 

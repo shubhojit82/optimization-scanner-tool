@@ -1,6 +1,125 @@
 import type { Client, Dimension, DimensionDetail, DimensionItem, Observation } from './contracts';
 import {mentionsBrand} from './brand-matching';
 export const RUBRIC_VERSION = 'readiness-cues/1.1.0';
+
+// ── Industry scoring profiles (scr-5 / cnt-7) ─────────────────────────────────
+// Each profile defines dimension weight multipliers (1.0 = no change).
+// Multipliers > 1.0 raise a dimension's importance for that industry.
+// Multipliers < 1.0 lower it. Missing dimensions inherit multiplier 1.0.
+export type IndustryProfile = {
+    label: string;
+    /** Regex patterns matched against client.industry (case-insensitive) */
+    match: RegExp[];
+    /** per-dimension weight multiplier */
+    weights: Partial<Record<string, number>>;
+    /** industry-specific action hints appended to matching dimension findings */
+    hints: Partial<Record<string, string>>;
+};
+
+export const INDUSTRY_PROFILES: IndustryProfile[] = [
+    {
+        label: 'Finance',
+        match: [/financ/i, /insurance/i, /invest/i, /bank/i, /mortgage/i, /wealth/i, /trading/i, /fintech/i],
+        weights: {
+            evidence:    1.5,   // authoritative references critical for YMYL finance
+            schema:      1.4,   // FinancialProduct, LoanOrCredit, BankOrCreditUnion schema
+            freshness:   1.5,   // rates, regulations change; stale content = compliance risk
+            'entity-links': 1.3, // SEC, FINRA, regulator links boost credibility
+            content:     1.2,   // thin/duplicate content is YMYL risk
+            technical:   1.2,
+        },
+        hints: {
+            evidence:    'Finance: cite regulatory sources (SEC, FINRA, FCA, CFPB) and link to official rate disclosures.',
+            schema:      'Finance: add FinancialProduct, LoanOrCredit, BankAccount, or BankOrCreditUnion JSON-LD with eligibility and rate fields.',
+            freshness:   'Finance: rates and regulations change frequently — add dateModified and use <time> tags on all rate tables.',
+            'entity-links': 'Finance: add sameAs links to your regulatory registrations, SEC/EDGAR filings, or FINRA BrokerCheck profile.',
+        },
+    },
+    {
+        label: 'Health',
+        match: [/health/i, /medical/i, /clinic/i, /hospital/i, /pharma/i, /dental/i, /wellness/i, /therap/i, /nurs/i, /doctor/i],
+        weights: {
+            evidence:    1.6,   // medical claims require strong citations (E-E-A-T)
+            schema:      1.5,   // MedicalCondition, Drug, Physician, Hospital schema
+            freshness:   1.4,   // clinical guidelines update; outdated advice is YMYL risk
+            content:     1.3,   // thin health content is dangerous
+            'entity-links': 1.3, // links to PubMed, NHS, CDC, WHO
+            technical:   1.1,
+        },
+        hints: {
+            evidence:    'Health: cite peer-reviewed sources (PubMed, Cochrane, NHS, CDC, WHO). Author should be a named medical professional.',
+            schema:      'Health: add Physician, MedicalClinic, MedicalCondition, or Drug JSON-LD. Include a physician name and license number.',
+            freshness:   'Health: medical guidance changes — always show review date and last-reviewed-by author name.',
+            'entity-links': 'Health: add sameAs links to your NPI registry, hospital accreditation bodies (JCI, CQC, TJC), or PubMed author profiles.',
+        },
+    },
+    {
+        label: 'Legal',
+        match: [/legal/i, /law firm/i, /attorney/i, /solicitor/i, /barrister/i, /counsel/i],
+        weights: {
+            evidence:    1.5,
+            schema:      1.4,   // LegalService, Attorney JSON-LD
+            freshness:   1.4,
+            'entity-links': 1.2,
+        },
+        hints: {
+            evidence:    'Legal: cite case law, statutory references, and bar association guidelines. Author must be a named qualified solicitor or attorney.',
+            schema:      'Legal: add LegalService or Attorney JSON-LD with bar membership number, jurisdictions, and practice areas.',
+        },
+    },
+    {
+        label: 'E-commerce / Retail',
+        match: [/retail/i, /e-commerce/i, /ecommerce/i, /shop/i, /store/i, /product/i, /commerce/i],
+        weights: {
+            schema:      1.5,   // Product, Offer, AggregateRating schema crucial
+            freshness:   1.4,   // pricing and availability change
+            entity:      1.3,
+            technical:   1.2,
+            content:     1.1,
+        },
+        hints: {
+            schema:      'Retail: add Product JSON-LD with offers, price, availability, sku, and aggregateRating. Use BreadcrumbList on category pages.',
+            freshness:   'Retail: product prices and stock change daily — use priceValidUntil and availability fields in Product schema.',
+            entity:      'Retail: add brand sameAs links to Google Merchant profile, Brand page on Wikidata, and manufacturer website.',
+        },
+    },
+    {
+        label: 'SaaS / Technology',
+        match: [/software/i, /saas/i, /tech/i, /platform/i, /api\b/i, /cloud/i, /devops/i, /cybersec/i],
+        weights: {
+            schema:      1.3,   // SoftwareApplication, WebAPI schema
+            content:     1.2,
+            query:       1.3,   // high question intent for SaaS comparison queries
+            'reasoning-cues': 1.3,
+        },
+        hints: {
+            schema:      'SaaS: add SoftwareApplication JSON-LD with applicationCategory, operatingSystem, offers, and aggregateRating.',
+            query:       'SaaS: structure H2/H3 headings as direct questions matching comparison and evaluation intent ("How does X compare to Y?").',
+        },
+    },
+];
+
+/** Detect which industry profile applies to a client (returns null if no match). */
+export function detectIndustryProfile(client: Client): IndustryProfile | null {
+    const industry = (client.industry || '').toLowerCase();
+    return INDUSTRY_PROFILES.find(p => p.match.some(re => re.test(industry))) ?? null;
+}
+
+/** Apply industry-specific weight multipliers and append hints to dimension actions.
+ *  Returns a new dimension array; does not mutate the input. */
+export function applyIndustryProfile(dimensions: Dimension[], client: Client): Dimension[] {
+    const profile = detectIndustryProfile(client);
+    if (!profile) return dimensions;
+    return dimensions.map(d => {
+        const mult = profile.weights[d.id] ?? 1.0;
+        const hint = profile.hints[d.id];
+        return {
+            ...d,
+            weight: Math.round(d.weight * mult),
+            action: hint ? `${d.action} [${profile.label}: ${hint}]` : d.action,
+        };
+    });
+}
 export function aggregate(dimensions: Dimension[]) { const known = dimensions.filter(d => d.score !== null); const coverage = known.reduce((n, d) => n + d.weight, 0); return { score: coverage ? Math.round(known.reduce((n, d) => n + d.weight * d.score!, 0) / coverage) : 0, coverage }; }
 // SEO = crawl + technical + schema + freshness (technical crawlability signals)
 // AEO = content + entity + evidence + query (answer engine signals from on-page content)
@@ -33,7 +152,7 @@ function allInnerTexts(html: string, tag: string): string[] {
     }
     return results;
 }
-export function analyzeHtml(html: string, c: Client): Dimension[] {
+export function analyzeHtml(html: string, c: Client, probeRunCount = 0): Dimension[] {
     const clean = html.replace(/<!--[\s\S]*?-->/g, '');
     const visible = extractText(clean);
     const tags = Array.from(clean.matchAll(/<(meta|link)\b([^>]*)>/gi), m => ({ tag: m[1].toLowerCase(), attrs: Object.fromEntries(Array.from(m[2].matchAll(/([\w-]+)\s*=\s*["']([^"']*)["']/g), a => [a[1].toLowerCase(), a[2]])) }));
@@ -221,6 +340,53 @@ export function analyzeHtml(html: string, c: Client): Dimension[] {
     const hasOl = /<ol\b/i.test(clean);
     const hasDl = /<dl\b/i.test(clean);
 
+    // ── Authorship & credibility detection (cnt-5) ───────────────────────────
+    // 1. Author in JSON-LD: look for 'author' property in Article/BlogPosting blocks
+    let schemaAuthor = '';
+    let schemaDatePublished = '';
+    let schemaDateModified = '';
+    for (const m of clean.matchAll(/<script\b[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
+        try {
+            const j = JSON.parse(m[1]);
+            const nodes = Array.isArray(j) ? j : [j, ...(Array.isArray(j?.['@graph']) ? j['@graph'] : [])];
+            for (const n of nodes) {
+                if (!n || typeof n !== 'object') continue;
+                const t = String(n['@type'] ?? '');
+                if (/Article|BlogPosting|NewsArticle/.test(t)) {
+                    const au = n['author'];
+                    if (!schemaAuthor) {
+                        if (typeof au === 'string') schemaAuthor = au;
+                        else if (typeof au === 'object' && au?.name) schemaAuthor = String(au.name);
+                        else if (Array.isArray(au) && au[0]?.name) schemaAuthor = String(au[0].name);
+                    }
+                    if (!schemaDatePublished && n['datePublished']) schemaDatePublished = String(n['datePublished']).slice(0, 10);
+                    if (!schemaDateModified && n['dateModified']) schemaDateModified = String(n['dateModified']).slice(0, 10);
+                }
+            }
+        } catch { /* ignore */ }
+    }
+    // 2. Meta tags: article:author, article:published_time
+    const metaArticleAuthor = tags.find(t => t.attrs.property === 'article:author')?.attrs.content ?? '';
+    const metaPublishedTime = tags.find(t => t.attrs.property === 'article:published_time')?.attrs.content?.slice(0, 10) ?? '';
+    const metaModifiedTime = tags.find(t => t.attrs.property === 'article:modified_time')?.attrs.content?.slice(0, 10) ?? '';
+    // 3. Visible byline heuristic: rel="author" link or common byline patterns
+    const relAuthorLink = /<a\b[^>]*rel\s*=\s*["'][^"']*author[^"']*["'][^>]*>([\s\S]*?)<\/a>/i.exec(clean);
+    const relAuthorText = relAuthorLink ? relAuthorLink[1].replace(/<[^>]+>/g, '').trim().slice(0, 80) : '';
+    // 4. Visible byline from itemprop="author" or common class patterns
+    const itempropAuthor = /<[^>]+itemprop\s*=\s*["']author["'][^>]*>([\s\S]*?)<\/[^>]+>/i.exec(clean);
+    const itempropAuthorText = itempropAuthor ? itempropAuthor[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().slice(0, 80) : '';
+    // Consolidate
+    const detectedAuthor = schemaAuthor || metaArticleAuthor || relAuthorText || itempropAuthorText;
+    const detectedPublished = schemaDatePublished || metaPublishedTime;
+    const detectedModified = schemaDateModified || metaModifiedTime;
+    const hasAuthor = !!detectedAuthor;
+    const hasPublishedDate = !!detectedPublished;
+    const hasModifiedDate = !!detectedModified;
+    // Credibility signals: HTTPS, canonical, external links already computed
+    // Compute authorship score: 0-100 based on what's present
+    const authorshipSignals = [hasAuthor, hasPublishedDate, hasModifiedDate, externalLinks.length > 0];
+    const authorshipScore = Math.round(authorshipSignals.filter(Boolean).length / authorshipSignals.length * 100);
+
     // Helper
     const item = (label: string, value: string, status: DimensionItem['status']): DimensionItem => ({label, value, status});
     const dd = (id: string, name: string, weight: number, score: number | null, evidence: string, action: string, details: DimensionDetail): Dimension =>
@@ -294,43 +460,101 @@ export function analyzeHtml(html: string, c: Client): Dimension[] {
                 }
             }),
 
-        dd('content', 'Answer structure', 10, 25 * [h1, h2Texts.length > 0, words >= 150, hasList || hasTable].filter(Boolean).length,
-            `${words} words; ${h2Texts.length} H2 heading(s); ${h3Texts.length} H3 heading(s); lists: ${hasList ? 'yes' : 'no'}; tables: ${hasTable ? 'yes' : 'no'}.`,
-            'Use descriptive headings and clear, factual answers; add lists or tables where useful.',
-            {
-                found: [...(h1 ? [`<h1>: "${h1Text}"`] : []), ...h2Texts.map(t => `<h2>: "${t}"`), ...h3Texts.map(t => `<h3>: "${t}"`), ...(hasList ? ['Lists (<ul>/<ol>) found'] : []), ...(hasTable ? ['Table (<table>) found'] : []), ...(words >= 150 ? [`Word count: ${words} words`] : [])],
-                missing: [...(!h1 ? ['<h1> tag missing — add a main heading'] : []), ...(h2Texts.length === 0 ? ['No <h2> headings — add sub-headings for each key topic or question'] : []), ...(words < 150 ? [`Only ${words} words — aim for at least 300 words of substantive content`] : []), ...(!hasList && !hasTable ? ['No lists or tables — add <ul>/<ol> for steps/features or <table> for comparisons'] : [])],
-                items: [
-                    item('<h1>', h1 ? `"${h1Text}"` : 'MISSING', h1 ? 'ok' : 'fail'),
-                    item('<h2> headings', h2Texts.length > 0 ? `${h2Texts.length} found` : 'NONE FOUND', h2Texts.length > 0 ? 'ok' : 'fail'),
-                    item('<h3> headings', h3Texts.length > 0 ? `${h3Texts.length} found` : 'None', h3Texts.length > 0 ? 'ok' : 'info'),
-                    item('Word count', `${words} words`, words >= 300 ? 'ok' : words >= 150 ? 'warn' : 'fail'),
-                    item('Lists / tables', hasList || hasTable ? `${hasList?'<ul>/<ol> ':''}${hasTable?'<table>':''}found` : 'NONE FOUND', hasList || hasTable ? 'ok' : 'warn'),
-                ],
-                table: {
-                    headers: ["Element", "Text", "Status"],
-                    rows: [
-                        ["<h1>", h1 ? h1Text : "MISSING", h1 ? "Pass" : "Fail"],
-                        ...h2Elements.map(h => [h.id ? `<h2> (id: ${h.id})` : "<h2>", h.text, "Pass"]),
-                        ...h3Elements.map(h => [h.id ? `<h3> (id: ${h.id})` : "<h3>", h.text, "Pass"])
-                    ]
+        // ── Content / thin-content dimension (cnt-6 integrated) ──────────────
+        (()=>{
+            // Thin content: < 300 words with no lists/tables = thin; 300-600 = acceptable; 600+ = rich
+            const isThin = words < 300 && !hasList && !hasTable;
+            const isAcceptable = words >= 300 || hasList || hasTable;
+            // Duplicate paragraphs: collect visible paragraphs, find near-duplicates
+            const paragraphTexts: string[] = [];
+            for (const m of clean.matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/gi)) {
+                const t = m[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+                if (t.length > 40) paragraphTexts.push(t.slice(0, 200));
+            }
+            const dupePairs = new Set<string>();
+            for (let i = 0; i < paragraphTexts.length; i++) {
+                for (let j = i + 1; j < paragraphTexts.length; j++) {
+                    const a = paragraphTexts[i].toLowerCase(), b = paragraphTexts[j].toLowerCase();
+                    // Jaccard similarity on trigrams
+                    const trigramsA = new Set(Array.from({length: Math.max(0, a.length - 2)}, (_, k) => a.slice(k, k + 3)));
+                    const trigramsB = new Set(Array.from({length: Math.max(0, b.length - 2)}, (_, k) => b.slice(k, k + 3)));
+                    const intersection = [...trigramsA].filter(t => trigramsB.has(t)).length;
+                    const union = trigramsA.size + trigramsB.size - intersection;
+                    if (union > 0 && intersection / union > 0.7) dupePairs.add(`${i}-${j}`);
                 }
-            }),
+            }
+            const hasDupes = dupePairs.size > 0;
+            const baseScore = 25 * [h1, h2Texts.length > 0, words >= 150, hasList || hasTable].filter(Boolean).length;
+            const thinPenalty = isThin ? -20 : 0;
+            const dupePenalty = hasDupes ? -10 : 0;
+            const score = Math.max(0, Math.min(100, baseScore + thinPenalty + dupePenalty));
+            return dd('content', 'Answer structure', 10, score,
+                `${words} words${isThin ? ' (thin)' : ''}; ${h2Texts.length} H2; ${h3Texts.length} H3; lists: ${hasList ? 'yes' : 'no'}; tables: ${hasTable ? 'yes' : 'no'}; duplicate paragraphs: ${dupePairs.size}.`,
+                isThin ? 'Page has thin content. Expand to 300+ words, add headings for each key topic, and include lists or tables.' : 'Use descriptive headings and clear, factual answers; add lists or tables where useful.',
+                {
+                    found: [...(h1 ? [`<h1>: "${h1Text}"`] : []), ...h2Texts.map(t => `<h2>: "${t}"`), ...h3Texts.map(t => `<h3>: "${t}"`), ...(hasList ? ['Lists (<ul>/<ol>) found'] : []), ...(hasTable ? ['Table (<table>) found'] : []), ...(words >= 300 ? [`Word count: ${words} words (sufficient)`] : [])],
+                    missing: [
+                        ...(!h1 ? ['<h1> tag missing — add a main heading'] : []),
+                        ...(h2Texts.length === 0 ? ['No <h2> headings — add sub-headings for each key topic or question'] : []),
+                        ...(isThin ? [`Thin content: only ${words} words with no lists or tables — expand to 300+ substantive words`] : words < 150 ? [`Only ${words} words — aim for at least 300 words`] : []),
+                        ...(!hasList && !hasTable ? ['No lists or tables — add <ul>/<ol> for steps/features or <table> for comparisons'] : []),
+                        ...(hasDupes ? [`${dupePairs.size} near-duplicate paragraph pair(s) detected — consolidate or differentiate repeated content`] : []),
+                    ],
+                    items: [
+                        item('<h1>', h1 ? `"${h1Text}"` : 'MISSING', h1 ? 'ok' : 'fail'),
+                        item('<h2> headings', h2Texts.length > 0 ? `${h2Texts.length} found` : 'NONE FOUND', h2Texts.length > 0 ? 'ok' : 'fail'),
+                        item('Word count', `${words} words`, words >= 300 ? 'ok' : words >= 150 ? 'warn' : 'fail'),
+                        item('Thin content', isThin ? `Yes — ${words} words, no lists/tables` : 'No', isThin ? 'fail' : 'ok'),
+                        item('Duplicate content', hasDupes ? `${dupePairs.size} near-duplicate paragraph pair(s)` : 'None detected', hasDupes ? 'warn' : 'ok'),
+                        item('Lists / tables', hasList || hasTable ? `${hasList ? '<ul>/<ol> ' : ''}${hasTable ? '<table>' : ''}found` : 'NONE FOUND', hasList || hasTable ? 'ok' : 'warn'),
+                    ],
+                    table: {
+                        headers: ["Element", "Text", "Status"],
+                        rows: [
+                            ["<h1>", h1 ? h1Text : "MISSING", h1 ? "Pass" : "Fail"],
+                            ["Word count", `${words} words`, words >= 300 ? "Pass" : words >= 150 ? "Warning" : "Fail"],
+                            ["Thin content", isThin ? "Yes" : "No", isThin ? "Fail" : "Pass"],
+                            ["Duplicate paragraphs", hasDupes ? `${dupePairs.size} pairs` : "None", hasDupes ? "Warning" : "Pass"],
+                            ...h2Elements.map(h => [h.id ? `<h2> (id: ${h.id})` : "<h2>", h.text, "Pass"] as string[]),
+                        ]
+                    }
+                });
+        })(),
 
-        dd('evidence', 'Reference cues', 12, externalLinks.length ? 100 : 0,
-            `${externalLinks.length} external reference link(s). Sources and claims have not been verified.`,
-            'Support material claims with relevant, verifiable references from authoritative external sources.',
+        dd('evidence', 'Reference cues', 12,
+            // Score blends external links presence (60%) with authorship signals (40%)
+            Math.round((externalLinks.length ? 60 : 0) + authorshipScore * 0.4),
+            `${externalLinks.length} external link(s). Author: ${detectedAuthor || 'not found'}. Published: ${detectedPublished || 'not found'}. Modified: ${detectedModified || 'not found'}.`,
+            'Add external reference links, an identifiable author, and published/modified dates to boost E-E-A-T and AI source credibility.',
             {
-                found: externalLinks.slice(0, 8).map(u => `External link: ${u}`),
-                missing: externalLinks.length === 0 ? ['No external links found — add at least one authoritative outbound link to support claims (e.g. standards bodies, research, official docs)'] : [],
+                found: [
+                    ...(detectedAuthor ? [`Author: ${detectedAuthor}${schemaAuthor ? ' (JSON-LD)' : metaArticleAuthor ? ' (meta)' : relAuthorText ? ' (rel=author)' : ' (itemprop)'}`] : []),
+                    ...(detectedPublished ? [`Published: ${detectedPublished}`] : []),
+                    ...(detectedModified ? [`Modified: ${detectedModified}`] : []),
+                    ...externalLinks.slice(0, 6).map(u => `External link: ${u}`),
+                ],
+                missing: [
+                    ...(!hasAuthor ? ['No author detected — add an author name via JSON-LD (Article.author), meta property="article:author", rel="author" link, or itemprop="author"'] : []),
+                    ...(!hasPublishedDate ? ['No published date found — add article:published_time meta or JSON-LD Article.datePublished'] : []),
+                    ...(!hasModifiedDate ? ['No modified date found — add article:modified_time meta or JSON-LD Article.dateModified to signal freshness'] : []),
+                    ...(externalLinks.length === 0 ? ['No external reference links — add at least one authoritative outbound link (standards bodies, research, official docs)'] : []),
+                ],
                 items: [
-                    item('External links found', String(externalLinks.length), externalLinks.length > 0 ? 'ok' : 'fail'),
-                    ...externalLinks.slice(0, 5).map(u => item('Link', u, 'info')),
-                    ...(externalLinks.length > 5 ? [item('Additional links', `+${externalLinks.length - 5} more`, 'info')] : []),
+                    item('Author', detectedAuthor || 'Not found', hasAuthor ? 'ok' : 'warn'),
+                    item('Published date', detectedPublished || 'Not found', hasPublishedDate ? 'ok' : 'warn'),
+                    item('Modified date', detectedModified || 'Not found', hasModifiedDate ? 'ok' : 'warn'),
+                    item('External links', String(externalLinks.length), externalLinks.length > 0 ? 'ok' : 'fail'),
+                    ...externalLinks.slice(0, 4).map(u => item('Link', u, 'info')),
+                    ...(externalLinks.length > 4 ? [item('Additional links', `+${externalLinks.length - 4} more`, 'info')] : []),
                 ],
                 table: {
-                    headers: ["URL", "Domain", "Anchor text"],
-                    rows: extLinks.map(l => [l.href, l.domain, l.text])
+                    headers: ["Signal", "Detected", "Source"],
+                    rows: [
+                        ["Author", detectedAuthor || "—", schemaAuthor ? "JSON-LD" : metaArticleAuthor ? "meta" : relAuthorText ? "rel=author" : itempropAuthorText ? "itemprop" : "—"],
+                        ["Published", detectedPublished || "—", schemaDatePublished ? "JSON-LD" : metaPublishedTime ? "meta" : "—"],
+                        ["Modified", detectedModified || "—", schemaDateModified ? "JSON-LD" : metaModifiedTime ? "meta" : "—"],
+                        ...extLinks.slice(0, 6).map(l => [l.href.slice(0, 60), l.domain, l.text.slice(0, 40)] as string[]),
+                    ],
                 }
             }),
 
@@ -383,24 +607,89 @@ export function analyzeHtml(html: string, c: Client): Dimension[] {
                 }
             }),
 
-        dd('freshness', 'Content freshness', 5, null,
-            'Publication dates cannot be verified from HTML alone.',
-            'Add datePublished and dateModified to JSON-LD. Show a visible "Last updated" date on the page.',
-            {
-                found: [],
-                missing: ['Publication date not assessed — add visible "Last updated" date and datePublished/dateModified in JSON-LD'],
-                items: [
-                    item('Assessment', 'Not measurable from HTML — requires dated source of truth', 'info'),
-                    item('Recommended', 'Add <time datetime="YYYY-MM-DD"> and JSON-LD datePublished/dateModified', 'info'),
-                ],
-                table: {
-                    headers: ["Check", "Result"],
-                    rows: [
-                        ["Assessment", "Not measurable from HTML — requires dated source of truth"],
-                        ["Recommended", "Add <time datetime=\"YYYY-MM-DD\"> and JSON-LD datePublished/dateModified"]
-                    ]
-                }
-            }),
+        // ── Freshness / staleness dimension (cnt-4) ─────────────────────────
+        (()=>{
+            // Extract datePublished / dateModified from JSON-LD
+            let jsonLdDate: string | null = null;
+            for (const m of clean.matchAll(/<script\b[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
+                try {
+                    const j = JSON.parse(m[1]);
+                    const nodes = Array.isArray(j) ? j : [j, ...(Array.isArray(j?.['@graph']) ? j['@graph'] : [])];
+                    for (const n of nodes) {
+                        const d = n?.dateModified || n?.datePublished;
+                        if (d && typeof d === 'string') { jsonLdDate = d; break; }
+                    }
+                } catch { /* ignore */ }
+                if (jsonLdDate) break;
+            }
+            // <time datetime="…"> elements
+            const timeTags = [...clean.matchAll(/<time\b[^>]*datetime\s*=\s*["']([^"']+)["'][^>]*>/gi)].map(m => m[1]);
+            // <meta> property article:published_time or article:modified_time
+            const metaDates = tags.filter(t => t.tag === 'meta' && /^article:(published|modified)_time$/i.test(t.attrs.property || '')).map(t => t.attrs.content ?? '');
+            // Visible text patterns: "Updated May 2024", "Last updated: Jan 2023", "Published: 2023-09-01"
+            const visibleDatePatterns = [
+                /\b(?:updated|published|last\s+updated|modified|reviewed)\s*:?\s*([A-Za-z]+ \d{4}|\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{2,4})/i,
+                /\b(\d{4}-\d{2}-\d{2})\b/,
+            ];
+            let visibleDate: string | null = null;
+            for (const p of visibleDatePatterns) {
+                const m = visible.match(p);
+                if (m) { visibleDate = m[1] ?? m[0]; break; }
+            }
+            const allDates = [jsonLdDate, ...timeTags, ...metaDates, visibleDate].filter(Boolean) as string[];
+            const latestDate = allDates.reduce<string | null>((best, d) => {
+                const parsed = Date.parse(d);
+                if (isNaN(parsed)) return best;
+                return best === null || parsed > Date.parse(best) ? d : best;
+            }, null);
+            // Staleness: >18 months = stale, 6–18 months = aging, <6 months = fresh
+            const nowMs = Date.now();
+            const ageMs = latestDate ? nowMs - Date.parse(latestDate) : null;
+            const ageMonths = ageMs !== null ? ageMs / (1000 * 60 * 60 * 24 * 30) : null;
+            const isFresh = ageMonths !== null && ageMonths < 6;
+            const isAging = ageMonths !== null && ageMonths >= 6 && ageMonths < 18;
+            const isStale = ageMonths !== null && ageMonths >= 18;
+            const hasAnyDate = allDates.length > 0;
+            const score = !hasAnyDate ? null : isFresh ? 100 : isAging ? 60 : 30;
+            const ageLabel = ageMonths === null ? 'unknown' : isFresh ? `${Math.round(ageMonths)} months old — fresh` : isAging ? `${Math.round(ageMonths)} months old — aging` : `${Math.round(ageMonths / 12 * 10) / 10} years old — stale`;
+            return dd('freshness', 'Content freshness', 5, score,
+                hasAnyDate
+                    ? `Latest date found: ${latestDate} (${ageLabel}). Sources: ${[jsonLdDate ? 'JSON-LD' : '', timeTags.length ? '<time>' : '', metaDates.length ? 'meta' : '', visibleDate ? 'visible text' : ''].filter(Boolean).join(', ')}.`
+                    : 'No date signals found in JSON-LD, <time> tags, meta properties, or visible text.',
+                hasAnyDate && isStale
+                    ? `Content is ${Math.round(ageMonths! / 12 * 10) / 10} years old. Refresh the page, update dateModified in JSON-LD, and add a visible "Last updated" date.`
+                    : 'Add datePublished and dateModified to JSON-LD. Show a visible "Last updated" date on the page.',
+                {
+                    found: [
+                        ...(jsonLdDate ? [`JSON-LD dateModified/datePublished: ${jsonLdDate}`] : []),
+                        ...timeTags.map(d => `<time datetime="${d}">`),
+                        ...metaDates.map(d => `<meta> article date: ${d}`),
+                        ...(visibleDate ? [`Visible date text: "${visibleDate}"`] : []),
+                    ],
+                    missing: [
+                        ...(!jsonLdDate ? ['dateModified/datePublished missing from JSON-LD — add "dateModified": "YYYY-MM-DD" to your Organization/Article schema'] : []),
+                        ...(timeTags.length === 0 ? ['No <time datetime="…"> elements — add a visible date with <time datetime="YYYY-MM-DD">Updated: Month Year</time>'] : []),
+                        ...(isStale ? [`Content is ${Math.round(ageMonths! / 12 * 10) / 10} years old — update content and set dateModified to today`] : []),
+                    ],
+                    items: [
+                        item('Date found', hasAnyDate ? latestDate! : 'None detected', hasAnyDate ? (isFresh ? 'ok' : isAging ? 'warn' : 'fail') : 'warn'),
+                        item('Age', ageLabel, isFresh ? 'ok' : isAging ? 'warn' : ageMonths !== null ? 'fail' : 'info'),
+                        item('JSON-LD date', jsonLdDate ?? 'Not found', jsonLdDate ? 'ok' : 'warn'),
+                        item('<time> elements', timeTags.length > 0 ? `${timeTags.length} found` : 'None', timeTags.length > 0 ? 'ok' : 'info'),
+                        item('Meta article date', metaDates.length > 0 ? metaDates[0] : 'Not found', metaDates.length > 0 ? 'ok' : 'info'),
+                    ],
+                    table: {
+                        headers: ["Source", "Value", "Age Status"],
+                        rows: [
+                            ["JSON-LD dateModified/Published", jsonLdDate ?? "Not found", jsonLdDate ? ageLabel : "—"],
+                            ...timeTags.map(d => ["<time datetime>", d, ""] as string[]),
+                            ...metaDates.map(d => ["meta article:*_time", d, ""] as string[]),
+                            ...(visibleDate ? [["Visible text", visibleDate, ""]] : []),
+                            ["Staleness assessment", hasAnyDate ? ageLabel : "No dates found", isFresh ? "Fresh" : isAging ? "Aging" : ageMonths !== null ? "Stale" : "Unknown"],
+                        ]
+                    }
+                });
+        })(),
 
         dd('authority', 'External authority', 5, null,
             'Third-party reputation has not been assessed.',
@@ -421,21 +710,26 @@ export function analyzeHtml(html: string, c: Client): Dimension[] {
                 }
             }),
 
-        dd('measurement', 'Monitoring coverage', 5, null,
-            'No observation data linked to this page.',
-            'Go to Observations tab → run queries from the Query universe → track mention and citation rates monthly.',
+        dd('measurement', 'Monitoring coverage', 5,
+            probeRunCount > 0 ? 100 : 0,
+            probeRunCount > 0
+                ? `${probeRunCount} AI probe run(s) recorded. Brand visibility is being monitored.`
+                : 'No AI probe runs recorded for this client.',
+            probeRunCount > 0
+                ? 'Keep running probes regularly to track mention and citation rate trends.'
+                : 'Go to the Observations tab → Run probe to query AI engines and start measuring GEO visibility.',
             {
-                found: [],
-                missing: ['No AI observation data — run queries in the Observations tab to measure GEO score'],
+                found: probeRunCount > 0 ? [`${probeRunCount} probe run(s) completed`] : [],
+                missing: probeRunCount > 0 ? [] : ['No AI probe runs — run a probe in the Observations tab to score this dimension'],
                 items: [
-                    item('Assessment', 'Not measurable from HTML — requires AI provider observations', 'info'),
-                    item('How to fix', 'Observations tab → select a query → Run query & save', 'info'),
+                    item('Probe runs', probeRunCount > 0 ? `${probeRunCount} run(s) recorded` : 'None yet', probeRunCount > 0 ? 'ok' : 'warn'),
+                    item(probeRunCount > 0 ? 'Keep monitoring' : 'How to fix', probeRunCount > 0 ? 'Continue running probes to track visibility trends' : 'Observations tab → Run probe → select providers and prompts', probeRunCount > 0 ? 'ok' : 'warn'),
                 ],
                 table: {
                     headers: ["Check", "Result"],
                     rows: [
-                        ["Assessment", "Not measurable from HTML — requires AI provider observations"],
-                        ["How to fix", "Observations tab → select a query → Run query & save"]
+                        ["Probe runs recorded", probeRunCount > 0 ? `${probeRunCount}` : "0 — none yet"],
+                        [probeRunCount > 0 ? "Status" : "How to fix", probeRunCount > 0 ? "Monitoring active" : "Observations tab → Run probe"]
                     ]
                 }
             }),
@@ -778,5 +1072,17 @@ export function analyzeHtml(html: string, c: Client): Dimension[] {
         })(),
     ];
 }
-export function queryUniverse(c: Client) { return (c.products.length ? c.products : [c.industry]).flatMap(p => [{ intent: 'Education', prompt: `What is ${p} and who is it for?` }, { intent: 'Evaluation', prompt: `Which ${p} providers should a business in ${c.market} evaluate?` }, { intent: 'Implementation', prompt: `How can a business implement ${p}?` }, ...c.competitors.map(k => ({ intent: 'Comparison', prompt: `How does ${c.name} compare with ${k} for ${p}?` }))]); }
+export type QueryItem = {intent: string; funnel: 'awareness' | 'consideration' | 'decision' | 'retention'; prompt: string};
+export function queryUniverse(c: Client): QueryItem[] {
+    return (c.products.length ? c.products : [c.industry]).flatMap(p => [
+        {intent: 'Education',    funnel: 'awareness'     as const, prompt: `What is ${p} and who is it for?`},
+        {intent: 'Education',    funnel: 'awareness'     as const, prompt: `What problems does ${p} solve?`},
+        {intent: 'Evaluation',   funnel: 'consideration' as const, prompt: `Which ${p} providers should a business in ${c.market} evaluate?`},
+        {intent: 'Evaluation',   funnel: 'consideration' as const, prompt: `What should I look for when choosing a ${p} solution?`},
+        {intent: 'Implementation', funnel: 'decision'    as const, prompt: `How can a business implement ${p}?`},
+        {intent: 'Implementation', funnel: 'decision'    as const, prompt: `What is the cost of ${p} for a mid-size company?`},
+        {intent: 'Retention',    funnel: 'retention'     as const, prompt: `What are best practices for ${p} ongoing management?`},
+        ...c.competitors.map(k => ({intent: 'Comparison', funnel: 'consideration' as const, prompt: `How does ${c.name} compare with ${k} for ${p}?`})),
+    ]);
+}
 export function visibility(c: Client, rows: Observation[]) { const hostname = new URL(c.domain).hostname.replace(/^www\./, ''); const mentions = rows.filter(r => mentionsBrand(c, r.response)).length; const citations = rows.filter(r => r.citations.some(u => { const h = new URL(u).hostname.replace(/^www\./, ''); return h === hostname || h.endsWith('.' + hostname); })).length; return { sample: rows.length, mentionRate: rows.length ? Math.round(mentions / rows.length * 100) : null, citationRate: rows.length ? Math.round(citations / rows.length * 100) : null }; }

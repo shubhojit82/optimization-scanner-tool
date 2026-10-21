@@ -1,6 +1,6 @@
 "use client";
 import { useState } from 'react';
-import { Activity, AlertTriangle, ArrowRight, BookOpen, Check, ChevronDown, ChevronUp, Copy, Lightbulb, Loader, Search, Wand2 } from 'lucide-react';
+import { ArrowRight, BookOpen, Check, ChevronDown, ChevronUp, Copy, Lightbulb, Loader, Search, Wand2, Zap, MessageCircle } from 'lucide-react';
 import type { Client, Audit, ProviderInfo } from '../src/core/contracts';
 import type { SmartPromptsResult, SmartPromptItem } from '../src/application/smart-prompts';
 import { api } from './workbench-api';
@@ -255,17 +255,24 @@ export function SmartPromptsPanel({ client, audits, providers, busy, onBusy, onR
 
                     {/* Audit selector */}
                     {audits.length > 1 && (
-                        <div>
+                        <div style={{ maxWidth: 380 }}>
                             <div style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Audit to analyse</div>
-                            <select value={selectedAudit} onChange={e => setSelectedAudit(e.target.value)}
-                                style={{ fontSize: 13, padding: '8px 12px', borderRadius: 7, border: '1.5px solid #e0e7ed', background: '#fafbfc', color: '#1f2328', outline: 'none', cursor: 'pointer' }}>
-                                <option value="">Latest audit ({latestAudit ? new URL(latestAudit.url).hostname : '—'})</option>
-                                {audits.map(a => (
-                                    <option key={a.id} value={a.id}>
-                                        {new URL(a.url).hostname} · {new Date(a.created).toLocaleDateString()} · {a.score}/100
-                                    </option>
-                                ))}
-                            </select>
+                            <div style={{ position: 'relative' }}>
+                                <select value={selectedAudit} onChange={e => setSelectedAudit(e.target.value)}
+                                    onFocus={e => (e.currentTarget.style.borderColor = '#4f6ef7')}
+                                    onBlur={e => (e.currentTarget.style.borderColor = '#e4e6ef')}
+                                    style={{ width: '100%', appearance: 'none', WebkitAppearance: 'none', fontSize: 13, padding: '8px 32px 8px 12px', borderRadius: 8, border: '1.5px solid #e4e6ef', background: '#fafafa', color: '#1a1d2e', outline: 'none', cursor: 'pointer' }}>
+                                    <option value="">Latest audit ({latestAudit ? new URL(latestAudit.url).hostname : '—'})</option>
+                                    {audits.map(a => (
+                                        <option key={a.id} value={a.id}>
+                                            {new URL(a.url).hostname} · {new Date(a.created).toLocaleDateString()} · {a.score}/100
+                                        </option>
+                                    ))}
+                                </select>
+                                <svg style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} width={12} height={12} viewBox="0 0 12 12" fill="none">
+                                    <path d="M2 4l4 4 4-4" stroke="#6b7280" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+                                </svg>
+                            </div>
                         </div>
                     )}
 
@@ -339,17 +346,58 @@ export function SmartPromptsPanel({ client, audits, providers, busy, onBusy, onR
                 </>
             )}
 
-            {/* Empty state */}
+            {/* ── Empty state — has audit + provider but nothing generated yet ── */}
             {!result && !loading && latestAudit && configuredProviders.length > 0 && (
-                <section className="panel">
-                    <div style={{ padding: '48px 24px', textAlign: 'center', color: '#9ca3af', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
-                        <Search size={36} style={{ opacity: 0.25 }} />
-                        <div>
-                            <p style={{ margin: 0, fontWeight: 600, color: '#57606a', fontSize: 15 }}>No prompts yet</p>
-                            <p style={{ margin: '6px 0 0', fontSize: 13 }}>Click <strong>Generate smart prompts</strong> above — the AI analyses your audit gaps and designs {15}–20 targeted prompts.</p>
+                <div style={{ background: 'linear-gradient(135deg,#f8faff 0%,#f0f4ff 100%)', border: '1px solid #e4e6ef', borderRadius: 10, padding: '32px 32px', display: 'flex', gap: 48, alignItems: 'center', flexWrap: 'wrap' }}>
+                    {/* SVG: magnifier scanning text with intent tags */}
+                    <div style={{ flexShrink: 0 }}>
+                        <svg width={200} height={130} viewBox="0 0 200 130" aria-hidden="true">
+                            {/* Document */}
+                            <rect x={20} y={10} width={100} height={110} rx={8} fill="#fff" stroke="#e4e6ef" strokeWidth={1.5} />
+                            {/* Text lines */}
+                            {[28, 40, 52, 64, 76, 88].map((y, i) => (
+                                <rect key={y} x={32} y={y} width={i % 3 === 2 ? 55 : 76} height={6} rx={3} fill="#e4e6ef" />
+                            ))}
+                            {/* Intent tag badges */}
+                            <rect x={32} y={100} width={34} height={12} rx={6} fill="#dbeafe" />
+                            <text x={49} y={109} textAnchor="middle" fontSize={7} fontWeight={700} fill="#1d4ed8">INFO</text>
+                            <rect x={70} y={100} width={38} height={12} rx={6} fill="#ede9fe" />
+                            <text x={89} y={109} textAnchor="middle" fontSize={7} fontWeight={700} fill="#6d28d9">EVAL</text>
+                            {/* Magnifier */}
+                            <circle cx={148} cy={62} r={28} fill="none" stroke="#4f6ef7" strokeWidth={2.5} />
+                            <circle cx={148} cy={62} r={22} fill="#eef2ff" opacity={0.6} />
+                            <line x1={169} y1={83} x2={182} y2={96} stroke="#4f6ef7" strokeWidth={3} strokeLinecap="round" />
+                            {/* Wand spark */}
+                            <circle cx={155} cy={55} r={3} fill="#8b5cf6" />
+                            <line x1={155} y1={49} x2={155} y2={44} stroke="#8b5cf6" strokeWidth={1.5} />
+                            <line x1={160} y1={52} x2={164} y2={49} stroke="#8b5cf6" strokeWidth={1.5} />
+                            <line x1={161} y1={58} x2={166} y2={58} stroke="#8b5cf6" strokeWidth={1.5} />
+                        </svg>
+                        <p style={{ fontSize: 11, color: '#9ca3af', textAlign: 'center', marginTop: 4 }}>Illustrative — generate to see real prompts</p>
+                    </div>
+                    {/* Explainer tiles */}
+                    <div style={{ flex: 1, minWidth: 220 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.08em', color: '#4f6ef7', textTransform: 'uppercase', marginBottom: 12 }}>What smart prompts are</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                            {[
+                                { icon: <Wand2 size={15} />, color: '#8b5cf6', bg: '#f5f3ff', title: '15-20 AI-crafted prompts', text: 'Generated from your top audit gap dimensions — transactional, informational, comparison, evaluation, and navigational intent.' },
+                                { icon: <MessageCircle size={15} />, color: '#4f6ef7', bg: '#eef2ff', title: 'Persona-matched', text: 'Each prompt targets a specific buyer persona — enterprise evaluator, analyst, press, or technical lead.' },
+                                { icon: <Zap size={15} />, color: '#10b981', bg: '#ecfdf5', title: 'Fire straight into AI Visibility', text: 'Click Probe next to any prompt to run it immediately against your configured AI engines.' },
+                            ].map(item => (
+                                <div key={item.title} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                                    <div style={{ width: 30, height: 30, borderRadius: 8, background: item.bg, color: item.color, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{item.icon}</div>
+                                    <div>
+                                        <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1d2e' }}>{item.title}</div>
+                                        <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2, lineHeight: 1.5 }}>{item.text}</div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        <div style={{ marginTop: 16, padding: '10px 14px', background: '#fff', border: '1px solid #e4e6ef', borderRadius: 8, fontSize: 12, color: '#374151', lineHeight: 1.5 }}>
+                            <strong style={{ color: '#4f6ef7' }}>To get started:</strong> Select a provider above and click <strong>Generate smart prompts</strong>.
                         </div>
                     </div>
-                </section>
+                </div>
             )}
         </div>
     );

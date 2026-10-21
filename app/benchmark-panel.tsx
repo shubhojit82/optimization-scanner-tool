@@ -164,6 +164,56 @@ export function BenchmarkPanel({ client, busy, onBusy }: Props) {
                 </div>
             </section>
 
+            {/* ── Empty state ── */}
+            {!results && !scanning && (
+                <div style={{ background:'linear-gradient(135deg,#f8faff 0%,#f0f4ff 100%)', border:'1px solid #e4e6ef', borderRadius:10, padding:'32px 32px', display:'flex', gap:48, alignItems:'center', flexWrap:'wrap' }}>
+                    <div style={{ flexShrink:0 }}>
+                        <svg width={240} height={130} viewBox="0 0 240 130" aria-hidden="true">
+                            {/* Podium bars */}
+                            {[[60,'#d97706',90,'2nd'],[120,'#4f6ef7',110,'1st'],[180,'#6b7280',65,'3rd']].map(([cx,col,h,rank])=>(
+                                <g key={rank as string}>
+                                    <rect x={(cx as number)-20} y={20+(110-(h as number))} width={40} height={h as number} rx={4}
+                                        fill={(col as string)+(rank==='1st'?'':'22')} stroke={col as string} strokeWidth={rank==='1st'?0:1}/>
+                                    <text x={cx as number} y={140} textAnchor="middle" fontSize={9} fill="#6b7280">{rank}</text>
+                                    <text x={cx as number} y={15+(110-(h as number))} textAnchor="middle" fontSize={10} fontWeight={700} fill={col as string}>
+                                        {rank==='1st'?'82':rank==='2nd'?'74':'61'}
+                                    </text>
+                                </g>
+                            ))}
+                            {/* Legend dots */}
+                            {[['You','#4f6ef7',75],['Comp A','#d97706',115],['Comp B','#6b7280',155]].map(([lbl,col,lx])=>(
+                                <g key={lbl as string}>
+                                    <circle cx={lx as number} cy={118} r={4} fill={col as string}/>
+                                    <text x={(lx as number)+8} y={122} fontSize={8} fill="#6b7280">{lbl}</text>
+                                </g>
+                            ))}
+                        </svg>
+                        <p style={{ fontSize:11, color:'#9ca3af', textAlign:'center', marginTop:4 }}>Illustrative — run benchmark to see real league table</p>
+                    </div>
+                    <div style={{ flex:1, minWidth:220 }}>
+                        <div style={{ fontSize:11, fontWeight:700, letterSpacing:'.08em', color:'#4f6ef7', textTransform:'uppercase', marginBottom:12 }}>What benchmark does</div>
+                        <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+                            {[
+                                { icon:<BarChart2 size={15}/>, color:'#4f6ef7', bg:'#eef2ff', title:'Score up to 6 URLs side-by-side', text:'Fetches and scores each URL against the full GEO rubric in one run.' },
+                                { icon:<TrendingUp size={15}/>, color:'#10b981', bg:'#ecfdf5', title:'League table with gap analysis', text:'Ranks all URLs by overall score — SEO, AEO, and GEO sub-scores shown for each.' },
+                                { icon:<Zap size={15}/>, color:'#8b5cf6', bg:'#f5f3ff', title:'Vs leader comparison', text:'Highlights where you fall behind the top scorer so you know exactly where to focus.' },
+                            ].map(item=>(
+                                <div key={item.title} style={{ display:'flex', gap:12, alignItems:'flex-start' }}>
+                                    <div style={{ width:30, height:30, borderRadius:8, background:item.bg, color:item.color, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>{item.icon}</div>
+                                    <div>
+                                        <div style={{ fontSize:13, fontWeight:600, color:'#1a1d2e' }}>{item.title}</div>
+                                        <div style={{ fontSize:12, color:'#6b7280', marginTop:2, lineHeight:1.5 }}>{item.text}</div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        <div style={{ marginTop:16, padding:'10px 14px', background:'#fff', border:'1px solid #e4e6ef', borderRadius:8, fontSize:12, color:'#374151', lineHeight:1.5 }}>
+                            <strong style={{ color:'#4f6ef7' }}>Tip:</strong> Your domain is pre-filled as the first URL. Add competitor URLs and hit <strong>Run benchmark</strong>.
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* ── League table ── */}
             {results && (
                 <>

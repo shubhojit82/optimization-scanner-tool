@@ -8,20 +8,20 @@ export type ScoreCategory = 'SEO' | 'AEO' | 'GEO';
 const CATEGORY_META: Record<ScoreCategory, {color: string; tagline: string; description: string; ids: string[]}> = {
     SEO: {
         color: '#3b82d4',
-        tagline: 'Search Engine Optimisation',
-        description: 'Can crawlers access and understand this page? Covers robots access, HTTP response, page structure (title, H1, meta description, canonical), structured data (JSON-LD), and content freshness signals.',
+        tagline: 'Technical crawlability',
+        description: 'Can AI crawlers reach, render and index this page? Scored from static HTML: robots.txt access, HTTP status, page structure (title, H1, canonical), JSON-LD schema markup, and freshness signals.',
         ids: ['crawl', 'technical', 'schema', 'freshness'],
     },
     AEO: {
         color: '#7c5cd8',
-        tagline: 'Answer Engine Optimisation',
-        description: 'Does the page directly answer the questions AI engines ask? Covers answer structure (headings, lists, word count), brand clarity, reference cues, query readiness, reasoning cues, passage density, and entity authority links.',
+        tagline: 'Content answer-readiness',
+        description: 'Is the on-page content structured so an AI engine can lift, match and cite a passage? Scored from HTML: answer structure, passage density, entity clarity, query coverage, reasoning cues, and evidence. Requires no live AI testing.',
         ids: ['content', 'entity', 'evidence', 'query', 'reasoning-cues', 'passage-density', 'entity-links'],
     },
     GEO: {
         color: '#14b8a6',
-        tagline: 'Generative Engine Optimisation',
-        description: 'Is this brand being mentioned and cited in AI-generated answers? Covers AI observation coverage (has a prompt set been tested?) and external authority signals (third-party mentions and reputation data).',
+        tagline: 'Live AI engine visibility',
+        description: 'Is the brand actually appearing in AI-generated answers right now? Requires live probe runs — fire real prompts at AI engines and measure mention rate, citation rate and share of voice. Always 0 until probe observations are collected.',
         ids: ['measurement', 'authority'],
     },
 };

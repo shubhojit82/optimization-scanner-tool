@@ -1,6 +1,6 @@
 "use client";
 import { useState } from 'react';
-import { TrendingUp, TrendingDown, Minus, ArrowRight } from 'lucide-react';
+import { TrendingUp, TrendingDown, Minus, ArrowRight, Calendar } from 'lucide-react';
 import type { Audit } from '../src/core/contracts';
 
 type Props = { audits: Audit[] };
@@ -13,8 +13,8 @@ const PILLAR: Record<string, string> = {
     'measurement':'AI-era KPIs','authority':'AI-era KPIs',
 };
 const PILLAR_COLOR: Record<string, string> = {
-    'AI Visibility':'#3b82d4','Technical AI Optimization':'#b45309',
-    'Content Analysis':'#0d8073','Sentiment & Reputation':'#7c5cd8','AI-era KPIs':'#db2777',
+    'AI Visibility':'#4f6ef7','Technical AI Optimization':'#b45309',
+    'Content Analysis':'#0d8073','Sentiment & Reputation':'#8b5cf6','AI-era KPIs':'#db2777',
 };
 
 function scoreColor(s: number | null) {
@@ -59,8 +59,178 @@ function fmt(d: string) {
     return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+// ── Styled audit select card ────────────────────────────────────────────────
+function AuditSelect({
+    label, value, onChange, audits, accent,
+}: {
+    label: string; value: number; onChange: (i: number) => void;
+    audits: Audit[]; accent: string;
+}) {
+    const selected = audits[value];
+    return (
+        <div style={{ flex: '1 1 260px', minWidth: 0 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: accent, letterSpacing: '.08em', textTransform: 'uppercase', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 5 }}>
+                <Calendar size={12} /> {label}
+            </div>
+            <div style={{ position: 'relative' }}>
+                <select
+                    value={value}
+                    onChange={e => onChange(Number(e.target.value))}
+                    style={{
+                        width: '100%',
+                        appearance: 'none',
+                        WebkitAppearance: 'none',
+                        background: '#ffffff',
+                        border: `1.5px solid ${accent}40`,
+                        borderRadius: 8,
+                        padding: '10px 40px 10px 14px',
+                        fontSize: '.875rem',
+                        fontWeight: 600,
+                        color: '#1a1d2e',
+                        cursor: 'pointer',
+                        boxShadow: '0 1px 3px rgba(0,0,0,.06)',
+                        outline: 'none',
+                        lineHeight: 1.4,
+                    }}
+                >
+                    {audits.map((a, i) => (
+                        <option key={a.id} value={i}>{fmt(a.created)} · Score {a.score}/100</option>
+                    ))}
+                </select>
+                {/* Chevron icon */}
+                <svg
+                    viewBox="0 0 20 20" width={16} height={16}
+                    style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: accent }}
+                    fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"
+                >
+                    <polyline points="5 8 10 13 15 8" />
+                </svg>
+            </div>
+            {selected && (
+                <div style={{ marginTop: 6, fontSize: 12, color: '#6b7280', paddingLeft: 2 }}>
+                    {selected.coverage}% rubric coverage
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ── Score transition card (Overall / SEO / AEO / GEO) ──────────────────────
+function ScoreCard({
+    label, tagline, from, to, delta, color, accentBg,
+}: {
+    label: string; tagline: string;
+    from: number | null; to: number | null; delta: number | null;
+    color: string; accentBg: string;
+}) {
+    const noData = from === null && to === null;
+    const deltaUp = (delta ?? 0) > 0;
+    const deltaDown = (delta ?? 0) < 0;
+
+    return (
+        <div style={{
+            background: '#ffffff',
+            border: '1px solid #e4e6ef',
+            borderRadius: 10,
+            padding: '18px 20px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 10,
+            boxShadow: '0 1px 3px rgba(0,0,0,.06)',
+            flex: '1 1 160px',
+            minWidth: 0,
+        }}>
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }} />
+                <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.08em', color: '#6b7280', textTransform: 'uppercase' }}>{label}</span>
+                <span style={{ fontSize: 10, color: '#9ca3af', marginLeft: 2 }}>— {tagline}</span>
+            </div>
+
+            {/* Score transition */}
+            {noData ? (
+                <div style={{ fontSize: 13, color: '#9ca3af', fontStyle: 'italic' }}>Not assessed</div>
+            ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    {/* From */}
+                    <div style={{ textAlign: 'center' }}>
+                        <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 3 }}>Before</div>
+                        <div style={{ fontSize: 28, fontWeight: 700, color: '#9ca3af', letterSpacing: '-.02em', fontFamily: 'IBM Plex Mono, monospace', lineHeight: 1 }}>
+                            {from ?? '—'}
+                        </div>
+                    </div>
+
+                    {/* Arrow */}
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, padding: '0 4px' }}>
+                        <ArrowRight size={18} color={deltaDown ? '#ef4444' : deltaUp ? color : '#d1d5db'} strokeWidth={2.5} />
+                    </div>
+
+                    {/* To */}
+                    <div style={{ textAlign: 'center' }}>
+                        <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 3 }}>After</div>
+                        <div style={{ fontSize: 28, fontWeight: 800, color: deltaDown ? '#ef4444' : deltaUp ? color : '#1a1d2e', letterSpacing: '-.02em', fontFamily: 'IBM Plex Mono, monospace', lineHeight: 1 }}>
+                            {to ?? '—'}
+                        </div>
+                    </div>
+
+                    {/* Delta badge */}
+                    {delta !== null && (
+                        <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
+                            <div style={{
+                                display: 'inline-flex', alignItems: 'center', gap: 4,
+                                fontSize: 13, fontWeight: 800,
+                                color: deltaDown ? '#b91c1c' : deltaUp ? '#15803d' : '#57606a',
+                                background: deltaDown ? '#fee2e2' : deltaUp ? '#dcfce7' : '#f0f2f5',
+                                borderRadius: 8, padding: '5px 10px',
+                            }}>
+                                {deltaUp ? <TrendingUp size={13} /> : deltaDown ? <TrendingDown size={13} /> : <Minus size={13} />}
+                                {deltaUp ? '+' : ''}{delta}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Mini progress bar */}
+            {!noData && (
+                <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                        <span style={{ fontSize: 10, color: '#9ca3af' }}>0</span>
+                        <span style={{ fontSize: 10, color: '#9ca3af' }}>100</span>
+                    </div>
+                    <div style={{ position: 'relative', height: 6, background: '#f3f4f6', borderRadius: 3, overflow: 'visible' }}>
+                        {/* Baseline ghost bar */}
+                        {from !== null && (
+                            <div style={{ position: 'absolute', height: '100%', width: `${from}%`, background: '#e5e7eb', borderRadius: 3 }} />
+                        )}
+                        {/* Current bar */}
+                        {to !== null && (
+                            <div style={{ position: 'absolute', height: '100%', width: `${to}%`, background: color, borderRadius: 3, opacity: .85, transition: 'width .5s ease' }} />
+                        )}
+                        {/* Baseline tick marker */}
+                        {from !== null && (
+                            <div style={{
+                                position: 'absolute', left: `${from}%`, top: -3, bottom: -3,
+                                width: 2, background: '#c4c8d8', borderRadius: 1,
+                                transform: 'translateX(-1px)',
+                            }} />
+                        )}
+                    </div>
+                    <div style={{ display: 'flex', gap: 14, marginTop: 6, fontSize: 10, color: '#9ca3af' }}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <span style={{ width: 10, height: 3, background: '#e5e7eb', display: 'inline-block', borderRadius: 2 }} /> Baseline
+                        </span>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <span style={{ width: 10, height: 3, background: color, display: 'inline-block', borderRadius: 2, opacity: .85 }} /> Current
+                        </span>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
 export function ProgressPanel({ audits }: Props) {
-    // Audits arrive newest-first
     const sorted = [...audits].sort((a, b) => new Date(a.created).getTime() - new Date(b.created).getTime());
 
     const [baseIdx, setBaseIdx] = useState(Math.max(0, sorted.length - 2));
@@ -70,7 +240,7 @@ export function ProgressPanel({ audits }: Props) {
         return (
             <section className="panel">
                 <div style={{ padding: '40px 24px', textAlign: 'center', color: '#57606a' }}>
-                    <p style={{ fontSize: '1.05rem', fontWeight: 600, color: '#213f50', marginBottom: 8 }}>No audit history yet</p>
+                    <p style={{ fontSize: '1.05rem', fontWeight: 600, color: '#1a1d2e', marginBottom: 8 }}>No audit history yet</p>
                     <p style={{ fontSize: '.88rem' }}>Import at least one page or run a scan to start tracking progress.</p>
                 </div>
             </section>
@@ -81,7 +251,6 @@ export function ProgressPanel({ audits }: Props) {
     const comp = sorted[compIdx];
     const isSame = base?.id === comp?.id;
 
-    // Build dimension diff map
     type DimDiff = {
         id: string; name: string; weight: number; pillar: string;
         baseScore: number | null; compScore: number | null; delta: number | null;
@@ -93,127 +262,208 @@ export function ProgressPanel({ audits }: Props) {
         return { id: d.id, name: d.name, weight: d.weight, pillar: PILLAR[d.id] ?? '', baseScore: b?.score ?? null, compScore: d.score, delta };
     });
 
-    const improved = diffs.filter(d => (d.delta ?? 0) > 0).sort((a, b) => (b.delta ?? 0) - (a.delta ?? 0));
+    const improved  = diffs.filter(d => (d.delta ?? 0) > 0).sort((a, b) => (b.delta ?? 0) - (a.delta ?? 0));
     const regressed = diffs.filter(d => (d.delta ?? 0) < 0).sort((a, b) => (a.delta ?? 0) - (b.delta ?? 0));
     const unchanged = diffs.filter(d => d.delta === 0 || d.delta === null);
 
     const overallDelta = isSame ? null : (comp?.score ?? 0) - (base?.score ?? 0);
-    const seoDelta = isSame ? null : (comp?.subScores?.seoScore ?? null) !== null && (base?.subScores?.seoScore ?? null) !== null
-        ? (comp.subScores!.seoScore! - base.subScores!.seoScore!) : null;
-    const aeoDelta = isSame ? null : (comp?.subScores?.aeoScore ?? null) !== null && (base?.subScores?.aeoScore ?? null) !== null
-        ? (comp.subScores!.aeoScore! - base.subScores!.aeoScore!) : null;
-    const geoDelta = isSame ? null : (comp?.subScores?.geoScore ?? null) !== null && (base?.subScores?.geoScore ?? null) !== null
-        ? (comp.subScores!.geoScore! - base.subScores!.geoScore!) : null;
+    const seoDelta = (!isSame && comp?.subScores?.seoScore != null && base?.subScores?.seoScore != null)
+        ? comp.subScores.seoScore - base.subScores.seoScore : null;
+    const aeoDelta = (!isSame && comp?.subScores?.aeoScore != null && base?.subScores?.aeoScore != null)
+        ? comp.subScores.aeoScore - base.subScores.aeoScore : null;
+    const geoDelta = (!isSame && comp?.subScores?.geoScore != null && base?.subScores?.geoScore != null)
+        ? comp.subScores.geoScore - base.subScores.geoScore : null;
 
-    // Trend data for sparkline (last 10 audits)
+    // Sparkline
     const spark = sorted.slice(-10);
-    const W = 400, H = 80, PL = 8, PR = 8, PT = 8, PB = 20;
+    const W = 320, H = 60, PL = 4, PR = 4, PT = 4, PB = 4;
     const iW = W - PL - PR, iH = H - PT - PB;
     function sx(i: number) { return PL + (spark.length < 2 ? iW / 2 : (i / (spark.length - 1)) * iW); }
     function sy(v: number) { return PT + iH - (v / 100) * iH; }
     const sparkPts = spark.map((a, i) => `${sx(i)},${sy(a.score)}`).join(' ');
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
             {/* ── Audit selector ── */}
             <section className="panel">
                 <div className="panel-heading">
                     <div><h2>Audit Comparison</h2><p>Select two audits to compare — baseline vs current</p></div>
                 </div>
-                <div style={{ padding: '12px 24px 20px', display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <div style={{ flex: '1 1 220px' }}>
-                        <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#8b9aa6', letterSpacing: '.07em', textTransform: 'uppercase', marginBottom: 6 }}>Baseline (from)</label>
-                        <select value={baseIdx} onChange={e => setBaseIdx(Number(e.target.value))}
-                            style={{ width: '100%', fontSize: 13 }}>
-                            {sorted.map((a, i) => (
-                                <option key={a.id} value={i}>{fmt(a.created)} — Score {a.score}/100</option>
-                            ))}
-                        </select>
+                <div style={{ padding: '16px 24px 20px', display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                    <AuditSelect label="Baseline (from)" value={baseIdx} onChange={setBaseIdx} audits={sorted} accent="#6b7280" />
+                    <div style={{ display: 'flex', alignItems: 'center', paddingTop: 34, flexShrink: 0 }}>
+                        <ArrowRight size={20} color="#d1d5db" />
                     </div>
-                    <ArrowRight size={18} color="#8b9aa6" style={{ flexShrink: 0, marginTop: 18 }} />
-                    <div style={{ flex: '1 1 220px' }}>
-                        <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#8b9aa6', letterSpacing: '.07em', textTransform: 'uppercase', marginBottom: 6 }}>Current (to)</label>
-                        <select value={compIdx} onChange={e => setCompIdx(Number(e.target.value))}
-                            style={{ width: '100%', fontSize: 13 }}>
-                            {sorted.map((a, i) => (
-                                <option key={a.id} value={i}>{fmt(a.created)} — Score {a.score}/100</option>
-                            ))}
-                        </select>
-                    </div>
+                    <AuditSelect label="Current (to)" value={compIdx} onChange={setCompIdx} audits={sorted} accent="#4f6ef7" />
                 </div>
             </section>
 
             {isSame ? (
-                <div className="panel" style={{ padding: '24px', textAlign: 'center', color: '#57606a', fontSize: 13 }}>
-                    Select two different audits to see the comparison.
+                <div className="panel" style={{ padding: '24px', textAlign: 'center', color: '#6b7280', fontSize: 13 }}>
+                    Select two <em>different</em> audits to see the comparison.
                 </div>
             ) : (
                 <>
-                    {/* ── Score delta header ── */}
-                    <section className="panel" style={{ background: '#0f3b52', border: 'none' }}>
-                        <div style={{ padding: '24px 28px' }}>
-                            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.1em', color: '#78ddc6', textTransform: 'uppercase', marginBottom: 12 }}>
-                                Progress Report · {fmt(base.created)} → {fmt(comp.created)}
-                            </div>
-                            <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', alignItems: 'center' }}>
-                                {[
-                                    { label: 'Overall', from: base.score, to: comp.score, delta: overallDelta, color: '#57e3c2' },
-                                    { label: 'SEO', from: base.subScores?.seoScore ?? null, to: comp.subScores?.seoScore ?? null, delta: seoDelta, color: '#3b82d4' },
-                                    { label: 'AEO', from: base.subScores?.aeoScore ?? null, to: comp.subScores?.aeoScore ?? null, delta: aeoDelta, color: '#7c5cd8' },
-                                    { label: 'GEO', from: base.subScores?.geoScore ?? null, to: comp.subScores?.geoScore ?? null, delta: geoDelta, color: '#0d8073' },
-                                ].map(({ label, from, to, delta, color }) => (
-                                    <div key={label} style={{ textAlign: 'center', minWidth: 80 }}>
-                                        <div style={{ fontSize: 10, fontWeight: 700, color: '#78ddc6', letterSpacing: '.08em', textTransform: 'uppercase', marginBottom: 6 }}>{label}</div>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'center' }}>
-                                            <span style={{ fontSize: 15, color: '#92ded0' }}>{from ?? '—'}</span>
-                                            <ArrowRight size={13} color="#4a8fa8" />
-                                            <span style={{ fontSize: 22, fontWeight: 800, color }}>  {to ?? '—'}</span>
-                                        </div>
-                                        {delta !== null && (
-                                            <div style={{ fontSize: 13, fontWeight: 800, color: delta > 0 ? '#57e3c2' : delta < 0 ? '#f87171' : '#8b9aa6', marginTop: 4 }}>
-                                                {delta > 0 ? '+' : ''}{delta} pts
-                                            </div>
-                                        )}
-                                    </div>
-                                ))}
-
-                                {/* Sparkline */}
-                                {spark.length >= 2 && (
-                                    <div style={{ marginLeft: 'auto', opacity: .9 }}>
-                                        <div style={{ fontSize: 10, fontWeight: 700, color: '#78ddc6', letterSpacing: '.07em', textTransform: 'uppercase', marginBottom: 4 }}>All-time trend</div>
-                                        <svg width={W * 0.6} height={H * 0.8} viewBox={`0 0 ${W} ${H}`}>
-                                            <polyline points={sparkPts} fill="none" stroke="#57e3c2" strokeWidth={2} strokeLinejoin="round" />
-                                            {spark.map((a, i) => <circle key={i} cx={sx(i)} cy={sy(a.score)} r={3} fill="#57e3c2" />)}
-                                        </svg>
-                                    </div>
-                                )}
-                            </div>
+                    {/* ── Score comparison cards ── */}
+                    <div>
+                        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.08em', color: '#6b7280', textTransform: 'uppercase', marginBottom: 10 }}>
+                            Score Comparison · {fmt(base.created)} → {fmt(comp.created)}
                         </div>
-                    </section>
-
-                    {/* ── Summary cards ── */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
-                        {[
-                            { label: 'Improved', count: improved.length, color: '#15803d', bg: '#dcfce7', icon: <TrendingUp size={18} /> },
-                            { label: 'Regressed', count: regressed.length, color: '#b91c1c', bg: '#fee2e2', icon: <TrendingDown size={18} /> },
-                            { label: 'Unchanged / Unscored', count: unchanged.length, color: '#57606a', bg: '#f0f2f5', icon: <Minus size={18} /> },
-                        ].map(c => (
-                            <div key={c.label} style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, padding: '16px 20px', display: 'flex', gap: 12, alignItems: 'center' }}>
-                                <div style={{ color: c.color, background: c.bg, borderRadius: 8, padding: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{c.icon}</div>
-                                <div>
-                                    <div style={{ fontSize: 26, fontWeight: 800, color: c.color, lineHeight: 1 }}>{c.count}</div>
-                                    <div style={{ fontSize: 12, color: '#57606a', marginTop: 3 }}>{c.label}</div>
+                        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                            <ScoreCard
+                                label="Overall" tagline="composite"
+                                from={base.score} to={comp.score} delta={overallDelta}
+                                color="#4f6ef7" accentBg="#eef2ff"
+                            />
+                            <ScoreCard
+                                label="SEO" tagline="search engine"
+                                from={base.subScores?.seoScore ?? null} to={comp.subScores?.seoScore ?? null} delta={seoDelta}
+                                color="#3b82f6" accentBg="#eff6ff"
+                            />
+                            <ScoreCard
+                                label="AEO" tagline="answer engine"
+                                from={base.subScores?.aeoScore ?? null} to={comp.subScores?.aeoScore ?? null} delta={aeoDelta}
+                                color="#8b5cf6" accentBg="#f5f3ff"
+                            />
+                            <ScoreCard
+                                label="GEO" tagline="generative engine"
+                                from={base.subScores?.geoScore ?? null} to={comp.subScores?.geoScore ?? null} delta={geoDelta}
+                                color="#10b981" accentBg="#ecfdf5"
+                            />
+                            {/* Sparkline card */}
+                            {spark.length >= 2 && (
+                                <div style={{
+                                    background: '#ffffff', border: '1px solid #e4e6ef', borderRadius: 10,
+                                    padding: '18px 20px', boxShadow: '0 1px 3px rgba(0,0,0,.06)',
+                                    flex: '1 1 200px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8,
+                                }}>
+                                    <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.08em', color: '#6b7280', textTransform: 'uppercase' }}>All-time trend</div>
+                                    <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: 'block' }} aria-label="Score trend">
+                                        <polyline points={sparkPts} fill="none" stroke="#4f6ef7" strokeWidth={2} strokeLinejoin="round" />
+                                        {spark.map((a, i) => <circle key={i} cx={sx(i)} cy={sy(a.score)} r={3} fill="#4f6ef7" />)}
+                                    </svg>
+                                    <div style={{ fontSize: 11, color: '#9ca3af' }}>Last {spark.length} audits · overall score</div>
                                 </div>
-                            </div>
-                        ))}
+                            )}
+                        </div>
                     </div>
+
+                    {/* ── Unified change summary panel ── */}
+                    <section className="panel">
+                        {/* Stat strip — WCAG AA: all text ≥ 4.5:1 */}
+                        <div style={{ display: 'flex', borderBottom: '1px solid #d1d5db' }}>
+                            {[
+                                { label: 'dimensions improved', count: improved.length, color: '#166534', bg: '#f0fdf4', border: '#bbf7d0', icon: <TrendingUp size={15} /> },
+                                { label: 'dimensions regressed', count: regressed.length, color: '#991b1b', bg: '#fff5f5', border: '#fecaca', icon: <TrendingDown size={15} /> },
+                                { label: 'unchanged or unscored', count: unchanged.length, color: '#374151', bg: '#f9fafb', border: '#e5e7eb', icon: <Minus size={15} /> },
+                            ].map((s, i, arr) => (
+                                <div key={s.label} style={{
+                                    flex: 1, display: 'flex', alignItems: 'center', gap: 12,
+                                    padding: '14px 22px', background: s.bg,
+                                    borderRight: i < arr.length - 1 ? `1px solid ${s.border}` : 'none',
+                                }}>
+                                    <div style={{ color: s.color, display: 'flex', alignItems: 'center', flexShrink: 0 }}>{s.icon}</div>
+                                    <span style={{ fontSize: 24, fontWeight: 800, color: s.color, letterSpacing: '-.02em', lineHeight: 1, flexShrink: 0 }}
+                                        aria-label={`${s.count} ${s.label}`}>{s.count}</span>
+                                    <span style={{ fontSize: 13, fontWeight: 500, color: '#374151' }}>{s.label}</span>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Dimension rows — all groups in one list */}
+                        {[
+                            ...improved.map(d => ({ ...d, status: 'improved' as const })),
+                            ...regressed.map(d => ({ ...d, status: 'regressed' as const })),
+                            ...unchanged.map(d => ({ ...d, status: 'unchanged' as const })),
+                        ].map((d, i, arr) => {
+                            const isImproved  = d.status === 'improved';
+                            const isRegressed = d.status === 'regressed';
+                            const accentColor = isImproved ? '#15803d' : isRegressed ? '#b91c1c' : '#d1d5db';
+                            const deltaLabel  = isImproved ? `+${d.delta}` : isRegressed ? `${d.delta}` : null;
+                            const deltaColor  = isImproved ? '#15803d' : '#b91c1c';
+                            const deltaBg     = isImproved ? '#dcfce7' : '#fee2e2';
+                            // group separator: first row in each group gets a slightly different bg header
+                            const prevStatus  = i > 0 ? arr[i - 1].status : null;
+                            const isGroupStart = d.status !== prevStatus;
+                            return (
+                                <div key={d.id}>
+                                    {isGroupStart && (
+                                        <div style={{
+                                            padding: '7px 20px 6px',
+                                            background: '#f3f4f6',
+                                            borderTop: i > 0 ? '2px solid #d1d5db' : 'none',
+                                            borderBottom: '1px solid #e4e6ef',
+                                            display: 'flex', alignItems: 'center', gap: 7,
+                                        }}>
+                                            <span style={{ width: 7, height: 7, borderRadius: '50%', background: accentColor === '#d1d5db' ? '#57606a' : accentColor, display: 'inline-block', flexShrink: 0 }} />
+                                            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.07em', textTransform: 'uppercase', color: accentColor === '#d1d5db' ? '#374151' : accentColor }}>
+                                                {d.status === 'improved' ? `Improved · ${improved.length}` : d.status === 'regressed' ? `Regressed · ${regressed.length}` : `Unchanged / Unscored · ${unchanged.length}`}
+                                            </span>
+                                        </div>
+                                    )}
+                                    <div style={{
+                                        display: 'grid',
+                                        gridTemplateColumns: '1fr auto auto',
+                                        alignItems: 'center',
+                                        gap: 16,
+                                        padding: '10px 20px 10px 22px',
+                                        borderBottom: '1px solid #f0f0f0',
+                                        borderLeft: `3px solid ${accentColor === '#d1d5db' ? '#c4c8d8' : accentColor}`,
+                                        background: isImproved ? '#f6fef9' : isRegressed ? '#fff5f5' : '#ffffff',
+                                    }}>
+                                        {/* Name + pillar — left column */}
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flexWrap: 'wrap' }}>
+                                            <span style={{ fontSize: 14, fontWeight: 600, color: '#111827' }}>{d.name}</span>
+                                            {/* Scores sit right next to the name */}
+                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+                                                <span style={{ fontSize: 13, fontFamily: 'IBM Plex Mono, monospace', fontWeight: 500, color: '#4b5563' }}
+                                                    aria-label={`Baseline score ${d.baseScore ?? 'not assessed'}`}>
+                                                    {d.baseScore ?? '—'}
+                                                </span>
+                                                <ArrowRight size={12} color="#6b7280" aria-hidden="true" />
+                                                <span style={{ fontSize: 13, fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700,
+                                                    color: isImproved ? '#15803d' : isRegressed ? '#b91c1c' : '#111827' }}
+                                                    aria-label={`Current score ${d.compScore ?? 'not assessed'}`}>
+                                                    {d.compScore !== null ? d.compScore : <span style={{ fontStyle: 'italic', color: '#6b7280', fontFamily: 'inherit' }}>N/A</span>}
+                                                </span>
+                                            </span>
+                                            {d.pillar && (
+                                                <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 7px', borderRadius: 8,
+                                                    background: (PILLAR_COLOR[d.pillar] ?? '#57606a') + '20',
+                                                    color: PILLAR_COLOR[d.pillar] ?? '#374151' }}>
+                                                    {d.pillar}
+                                                </span>
+                                            )}
+                                        </div>
+                                        {/* Delta badge — right, always visible */}
+                                        {deltaLabel !== null ? (
+                                            <span style={{ fontSize: 12, fontWeight: 700, color: deltaColor, background: deltaBg,
+                                                borderRadius: 6, padding: '3px 10px', flexShrink: 0,
+                                                border: `1px solid ${isImproved ? '#86efac' : '#fca5a5'}` }}
+                                                aria-label={`Change: ${deltaLabel} points`}>
+                                                {deltaLabel} pts
+                                            </span>
+                                        ) : (
+                                            <span style={{ fontSize: 12, color: '#6b7280', flexShrink: 0 }}
+                                                aria-label="No change">
+                                                No change
+                                            </span>
+                                        )}
+                                        {/* Spacer column (keeps grid 3-col consistent) */}
+                                        <span />
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </section>
 
                     {/* ── Dimension diff table ── */}
                     <section className="panel">
                         <div className="panel-heading">
-                            <div><h2>Dimension-by-Dimension Comparison</h2>
-                                <p>Every scored dimension — sorted by improvement. Grey bar = baseline, coloured bar = current.</p>
+                            <div>
+                                <h2>Dimension-by-Dimension Comparison</h2>
+                                <p>Every scored dimension — sorted by improvement. Light bar = baseline, coloured bar = current.</p>
                             </div>
                         </div>
                         <div style={{ overflowX: 'auto' }}>
@@ -231,20 +481,20 @@ export function ProgressPanel({ audits }: Props) {
                                         const rowBg = (d.delta ?? 0) > 0 ? '#f0fdf4' : (d.delta ?? 0) < 0 ? '#fff8f8' : i % 2 === 0 ? '#fff' : '#fafbfc';
                                         return (
                                             <tr key={d.id} style={{ borderBottom: '1px solid #f0f2f5', background: rowBg }}>
-                                                <td style={{ padding: '11px 16px', fontWeight: 600, color: '#213f50' }}>{d.name}</td>
+                                                <td style={{ padding: '11px 16px', fontWeight: 600, color: '#1a1d2e' }}>{d.name}</td>
                                                 <td style={{ padding: '11px 16px' }}>
                                                     {d.pillar && <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 10, background: pc + '18', color: pc }}>{d.pillar}</span>}
                                                 </td>
-                                                <td style={{ padding: '11px 16px', fontWeight: 700, color: scoreColor(d.baseScore) }}>
+                                                <td style={{ padding: '11px 16px', fontWeight: 700, color: scoreColor(d.baseScore), fontFamily: 'IBM Plex Mono, monospace' }}>
                                                     {d.baseScore === null ? <span style={{ color: '#9ca3af' }}>—</span> : d.baseScore}
                                                 </td>
-                                                <td style={{ padding: '11px 16px', fontWeight: 700, color: scoreColor(d.compScore) }}>
+                                                <td style={{ padding: '11px 16px', fontWeight: 700, color: scoreColor(d.compScore), fontFamily: 'IBM Plex Mono, monospace' }}>
                                                     {d.compScore === null ? <span style={{ color: '#9ca3af' }}>—</span> : d.compScore}
                                                 </td>
                                                 <td style={{ padding: '11px 16px' }}>
                                                     <DeltaBadge from={d.baseScore} to={d.compScore} />
                                                 </td>
-                                                <td style={{ padding: '11px 16px', minWidth: 120 }}>
+                                                <td style={{ padding: '11px 16px', minWidth: 140 }}>
                                                     <MiniBar value={d.compScore} prev={d.baseScore} color={pc} />
                                                 </td>
                                             </tr>
@@ -255,53 +505,6 @@ export function ProgressPanel({ audits }: Props) {
                         </div>
                     </section>
 
-                    {/* ── What changed narrative ── */}
-                    {(improved.length > 0 || regressed.length > 0) && (
-                        <div style={{ display: 'grid', gridTemplateColumns: improved.length && regressed.length ? '1fr 1fr' : '1fr', gap: 14 }}>
-                            {improved.length > 0 && (
-                                <section className="panel">
-                                    <div className="panel-heading" style={{ background: '#f0fdf4' }}>
-                                        <div><h2 style={{ color: '#15803d' }}>✓ What Improved</h2><p>{improved.length} dimension{improved.length > 1 ? 's' : ''} moved up</p></div>
-                                    </div>
-                                    <div style={{ padding: '12px 24px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                                        {improved.map(d => (
-                                            <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                                <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                                    <TrendingUp size={13} color="#15803d" />
-                                                </div>
-                                                <div style={{ flex: 1 }}>
-                                                    <div style={{ fontWeight: 600, fontSize: 13, color: '#213f50' }}>{d.name}</div>
-                                                    <div style={{ fontSize: 11, color: '#57606a' }}>{d.baseScore} → {d.compScore} · +{d.delta} pts</div>
-                                                </div>
-                                                <span style={{ fontSize: 11, fontWeight: 700, color: '#15803d', background: '#dcfce7', borderRadius: 20, padding: '2px 8px' }}>+{d.delta}</span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </section>
-                            )}
-                            {regressed.length > 0 && (
-                                <section className="panel">
-                                    <div className="panel-heading" style={{ background: '#fff8f8' }}>
-                                        <div><h2 style={{ color: '#b91c1c' }}>⚠ What Regressed</h2><p>{regressed.length} dimension{regressed.length > 1 ? 's' : ''} moved down</p></div>
-                                    </div>
-                                    <div style={{ padding: '12px 24px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                                        {regressed.map(d => (
-                                            <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                                <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#fee2e2', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                                    <TrendingDown size={13} color="#b91c1c" />
-                                                </div>
-                                                <div style={{ flex: 1 }}>
-                                                    <div style={{ fontWeight: 600, fontSize: 13, color: '#213f50' }}>{d.name}</div>
-                                                    <div style={{ fontSize: 11, color: '#57606a' }}>{d.baseScore} → {d.compScore} · {d.delta} pts</div>
-                                                </div>
-                                                <span style={{ fontSize: 11, fontWeight: 700, color: '#b91c1c', background: '#fee2e2', borderRadius: 20, padding: '2px 8px' }}>{d.delta}</span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </section>
-                            )}
-                        </div>
-                    )}
                 </>
             )}
         </div>

@@ -8,8 +8,11 @@ const payloadSchema = z.object({
         type: z.string(), text: z.string().optional(), annotations: z.array(z.object({
             type: z.string(), url: z.string().optional(), start_index: z.number().int().nonnegative().optional(), end_index: z.number().int().nonnegative().optional()
         }).passthrough()).optional()
-    }).passthrough()).optional()}).passthrough())
+    }).passthrough()).optional()}).passthrough()),
+    usage: z.object({input_tokens: z.number().optional(), output_tokens: z.number().optional(), total_tokens: z.number().optional()}).optional(),
 }).passthrough();
+// GPT-4.1: $2/M input, $8/M output tokens (approximate)
+function openaiCost(input: number, output: number) { return (input * 2 + output * 8) / 1_000_000; }
 function safeUrl(value: string) { try { const u = new URL(value); return ['https:', 'http:'].includes(u.protocol) && !u.username && !u.password; } catch { return false; } }
 
 export class OpenAIProvider implements AIProvider {
@@ -57,7 +60,12 @@ export class OpenAIProvider implements AIProvider {
             }
         }
         if (!response.trim() || response.length > 12000) throw new CollectionError('Provider returned an empty or oversized answer. No observation was saved.');
+        const inputTok = data.usage?.input_tokens ?? 0;
+        const outputTok = data.usage?.output_tokens ?? 0;
+        const tokenCount = (data.usage?.total_tokens ?? (inputTok + outputTok)) || undefined;
+        const estimatedCostUsd = tokenCount ? openaiCost(inputTok, outputTok) : undefined;
         return {engine: this.id, surface: 'Responses API · web search', model: data.model, prompt, response,
-            citations: [...citations], annotations, providerResponseId: data.id, observedAt: new Date().toISOString()};
+            citations: [...citations], annotations, providerResponseId: data.id, observedAt: new Date().toISOString(),
+            tokenCount, estimatedCostUsd};
     }
 }

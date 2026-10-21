@@ -53,7 +53,7 @@ function buildContext(client: Client, audit: Audit): string {
     return lines.join('\n');
 }
 
-const SMART_PROMPT = (ctx: string) => `You are an expert GEO (Generative Engine Optimisation) prompt engineer working with an IBM consultant.
+const SMART_PROMPT = (ctx: string) => `You are an expert GEO (Generative Engine Optimisation) prompt engineer working with a GEO specialist.
 Based on the client profile and audit gaps below, design probe prompts to send to AI answer engines to test whether the client brand is mentioned and cited.
 
 CLIENT & AUDIT GAP ANALYSIS:
