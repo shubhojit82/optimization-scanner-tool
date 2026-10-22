@@ -10,3 +10,7 @@ reference
 *.zip
 
 backups/
+reference-docs
+.bob
+infra
+compose.ibm.yaml

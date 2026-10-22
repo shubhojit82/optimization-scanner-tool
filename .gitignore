@@ -17,3 +17,11 @@ backups/
 
 # Client reference material (large, possibly confidential)
 reference-docs/
+
+# Terraform state and local variables hold secrets, never commit them
+infra/.terraform/
+infra/*.tfstate
+infra/*.tfstate.*
+infra/terraform.tfvars
+infra/*.auto.tfvars
+infra/crash.log

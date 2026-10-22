@@ -1,0 +1,13 @@
+# Copy to terraform.tfvars (git-ignored) and fill in.
+region         = "us-east"
+zone           = "us-east-1"
+resource_group = "Default"
+
+# ibmcloud is images --visibility public | grep ubuntu-24
+image_name = "ibm-ubuntu-24-04-minimal-amd64-N"
+
+# cat ~/.ssh/geo_ibm.pub
+ssh_public_key = "ssh-ed25519 AAAA... you@laptop"
+
+# curl https://api.ipify.org   (keep the /32)
+admin_cidr = "203.0.113.7/32"

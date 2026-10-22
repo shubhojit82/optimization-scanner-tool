@@ -92,6 +92,16 @@ Design decisions to carry forward (confirm with user only if they conflict with 
 - Login form fields exactly: Organization, Username, Password.
 - Cloud (Next.js) stack: out of scope unless the user asks.
 - `local` mode must keep working for developers (decide with user whether the login page also applies to local mode; default plan: opt-in via `GEO_AUTH_MODE=users`).
+## Work in progress: IBM CLOUD DEPLOY (step 1, minimum cost, us-east)
+- Plan: one VPC VSI (cx2-2x4, Ubuntu 24.04) running `compose.ibm.yaml` (app + Caddy) with a separate 20 GB data volume at `/srv/geo-data`. Free HTTPS host `<ip-with-dashes>.sslip.io`.
+- Code in `infra/` (Terraform, IBM provider; validated with `terraform validate`, cloud-init YAML checked). Creates VPC/subnet/SG, SSH key, data volume (prevent_destroy), VSI, floating IP, daily snapshot policy, COS bucket (35-day retention, prevent_destroy) and HMAC creds for `infra/scripts/geo-backup.sh` (nightly SQLite VACUUM INTO -> COS).
+- `terraform apply` NOT run yet. Needs `ibmcloud login --sso -r us-east`, an `infra/terraform.tfvars` (copy the .example; gitignored), and user approval of the plan/cost first.
+- After apply: clone repo on VM via read-only deploy key (private repo), write `.env` and `/etc/geo-backup.env`, `docker compose -f compose.ibm.yaml up -d --build`, test backup + restore.
+- Later target ("pro"): Code Engine + Databases for PostgreSQL + COS + Secrets Manager; requires storage refactor (async repo interfaces, scheduler lock) first.
+- Git remote `origin` is the plain https URL. A GitHub token leaked into chat earlier; the user must revoke it. Never embed tokens in the remote URL.
+- ICA Edge AI provider: not built; need base URL, auth header, request/response shape from the user.
+
+
 
 ## Working preferences observed
 - User prefers action over questions, wants concise, direct replies with real file links.

@@ -1,0 +1,37 @@
+#cloud-config
+# First-boot setup: Docker, the data disk, swap, and the nightly backup job.
+package_update: true
+package_upgrade: true
+packages:
+  - docker.io
+  - docker-compose-v2
+  - git
+  - rclone
+  - unattended-upgrades
+
+write_files:
+  - path: /usr/local/bin/mount-data.sh
+    permissions: "0755"
+    encoding: b64
+    content: ${mount_script}
+  - path: /usr/local/bin/geo-backup.sh
+    permissions: "0750"
+    encoding: b64
+    content: ${backup_script}
+  - path: /etc/cron.d/geo-backup
+    permissions: "0644"
+    content: |
+      # 02:30 UTC every night. Output goes to the system log.
+      30 2 * * * root /usr/local/bin/geo-backup.sh 2>&1 | logger -t geo-backup
+  - path: /etc/docker/daemon.json
+    permissions: "0644"
+    content: |
+      {"log-driver":"json-file","log-opts":{"max-size":"20m","max-file":"5"}}
+
+runcmd:
+  - /usr/local/bin/mount-data.sh ${data_volume_gb}
+  - fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile && echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  - mkdir -p /opt/geo && chown ubuntu:ubuntu /opt/geo
+  - usermod -aG docker ubuntu
+  - systemctl enable --now docker
+  - touch /var/lib/cloud/instance/geo-bootstrap-done
