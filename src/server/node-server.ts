@@ -1,7 +1,7 @@
 import {createServer,type IncomingMessage,type ServerResponse} from 'node:http';
 import {createHash,timingSafeEqual} from 'node:crypto';
 import {readFileSync,existsSync,statSync} from 'node:fs';
-import {resolve,extname,sep} from 'node:path';
+import {resolve,extname,sep,join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {z} from 'zod';
 import {SqliteRepository} from './sqlite-repository';
@@ -33,30 +33,46 @@ import {buildHtmlReport} from './html-report';
 import {buildExecSummaryReport} from './exec-summary-report';
 import {analyzeHtml,aggregate,subScores} from '../core/scoring';
 import {ScanCache} from './scan-cache';
+import {AuthService,SESSION_COOKIE} from './auth-service';
+import {Mailer,mailConfig,type MailConfig} from './mailer';
+import {handlePublicRoutes,handleAdminRoutes,clientGuard,readCookie,type RouteCtx} from './users-routes';
 import {ContentBriefService} from '../application/content-brief';
 import {SmartPromptsService} from '../application/smart-prompts';
 import {RgpsRewriteService} from '../application/rgps-rewrite';
 import {ArticleDraftService} from '../application/article-draft';
-export type Settings={mode:'local'|'basic';bind:string;port:number;dataDir:string;origins:string[];username:string;password:string;viewerPassword?:string;clientDir:string;openaiKey?:string;openaiModel?:string;geminiKey?:string;geminiModel?:string;claudeKey?:string;claudeModel?:string;perplexityKey?:string;perplexityModel?:string;contentfulSpaceId?:string;contentfulToken?:string;useBrowser?:boolean};
+export type UsersConfig={superEmail:string;superPassword:string;backdoorUser?:string;backdoorPassword?:string;publicUrl:string;trustProxy:boolean};
+export type Settings={users?:UsersConfig;mail:MailConfig;mode:'local'|'basic'|'users';bind:string;port:number;dataDir:string;origins:string[];username:string;password:string;viewerPassword?:string;clientDir:string;openaiKey?:string;openaiModel?:string;geminiKey?:string;geminiModel?:string;claudeKey?:string;claudeModel?:string;perplexityKey?:string;perplexityModel?:string;contentfulSpaceId?:string;contentfulToken?:string;useBrowser?:boolean};
 export function settings(e:NodeJS.ProcessEnv=process.env):Settings {
- const mode=e.GEO_AUTH_MODE||'local';if(mode!=='local'&&mode!=='basic')throw new Error('GEO_AUTH_MODE must be local or basic');
+ const rawMode=e.GEO_AUTH_MODE||'local';if(rawMode!=='local'&&rawMode!=='basic'&&rawMode!=='users')throw new Error('GEO_AUTH_MODE must be local, basic or users');const mode:Settings['mode']=rawMode;
  const bind=e.GEO_BIND||(mode==='local'?'127.0.0.1':'0.0.0.0');
  if(mode==='local'&&!['127.0.0.1','::1','localhost'].includes(bind))throw new Error('Local authentication may only bind to loopback');
  const port=Number(e.PORT||8080);if(!Number.isInteger(port)||port<0||port>65535)throw new Error('Invalid PORT');
- const username=mode==='local'?(e.GEO_LOCAL_USER||'local-admin'):(e.GEO_ADMIN_USERNAME||'');const password=e.GEO_ADMIN_PASSWORD||'';
+ const username=mode==='local'?(e.GEO_LOCAL_USER||'local-admin'):mode==='users'?(e.GEO_DATA_OWNER?.trim()||e.GEO_ADMIN_USERNAME?.trim()||'local-admin'):(e.GEO_ADMIN_USERNAME||'');const password=e.GEO_ADMIN_PASSWORD||'';
  if(mode==='basic'&&(!username||username.includes(':')||password.length<16||password.includes('REPLACE_')))throw new Error('Basic authentication requires a username and a unique password of at least 16 characters');
  const origins=(e.GEO_ALLOWED_ORIGINS||'http://localhost:5173,http://127.0.0.1:5173,http://localhost:8080,http://127.0.0.1:8080').split(',').map(s=>s.trim()).filter(Boolean);
  for(const o of origins){const u=new URL(o);if(u.origin!==o||!['http:','https:'].includes(u.protocol))throw new Error('Allowed origins must be exact HTTP(S) origins')}
  const viewerPassword=e.GEO_VIEWER_PASSWORD?.trim()||undefined;
  if(mode==='basic'&&viewerPassword&&password&&equal(viewerPassword,password))throw new Error('GEO_VIEWER_PASSWORD must differ from GEO_ADMIN_PASSWORD');
- return {mode,bind,port,dataDir:resolve(e.GEO_DATA_DIR||'data'),origins,username,password,viewerPassword,clientDir:resolve('dist/client'),openaiKey:e.OPENAI_API_KEY?.trim()||undefined,openaiModel:e.GEO_OPENAI_MODEL?.trim()||'gpt-4o-mini',geminiKey:e.GEMINI_API_KEY?.trim()||undefined,geminiModel:e.GEO_GEMINI_MODEL?.trim()||'gemini-3.8-flash',claudeKey:e.ANTHROPIC_API_KEY?.trim()||undefined,claudeModel:e.GEO_CLAUDE_MODEL?.trim()||'claude-opus-4-5-20251101',perplexityKey:e.PERPLEXITY_API_KEY?.trim()||undefined,perplexityModel:e.GEO_PERPLEXITY_MODEL?.trim()||'sonar',contentfulSpaceId:e.CONTENTFUL_SPACE_ID?.trim()||undefined,contentfulToken:e.CONTENTFUL_ACCESS_TOKEN?.trim()||undefined,useBrowser:e.GEO_USE_BROWSER==='true'};
+ let users:UsersConfig|undefined;
+ if(mode==='users'){
+  const superEmail=(e.GEO_SUPERADMIN_EMAIL||'').trim().toLowerCase(),superPassword=e.GEO_SUPERADMIN_PASSWORD||'';
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(superEmail)||superPassword.length<16||superPassword.includes('REPLACE_'))throw new Error('Users authentication requires GEO_SUPERADMIN_EMAIL and a unique GEO_SUPERADMIN_PASSWORD of at least 16 characters');
+  const backdoorUser=e.GEO_BACKDOOR_USER?.trim().toLowerCase()||undefined,backdoorPassword=e.GEO_BACKDOOR_PASSWORD||undefined;
+  if(!!backdoorUser!==!!backdoorPassword)throw new Error('Set both GEO_BACKDOOR_USER and GEO_BACKDOOR_PASSWORD, or neither');
+  if(backdoorUser&&backdoorPassword){if(backdoorPassword.length<20||backdoorPassword.includes('REPLACE_'))throw new Error('GEO_BACKDOOR_PASSWORD must be unique and at least 20 characters');if(backdoorUser===superEmail||equal(backdoorPassword,superPassword))throw new Error('The break-glass credential must differ from the Super Admin credential')}
+  users={superEmail,superPassword,backdoorUser,backdoorPassword,publicUrl:(e.GEO_PUBLIC_URL?.trim()||origins[0]).replace(/\/+$/,''),trustProxy:e.GEO_TRUST_PROXY==='true'};
+ }
+ return {users,mail:mailConfig(e),mode,bind,port,dataDir:resolve(e.GEO_DATA_DIR||'data'),origins,username,password,viewerPassword,clientDir:resolve('dist/client'),openaiKey:e.OPENAI_API_KEY?.trim()||undefined,openaiModel:e.GEO_OPENAI_MODEL?.trim()||'gpt-4o-mini',geminiKey:e.GEMINI_API_KEY?.trim()||undefined,geminiModel:e.GEO_GEMINI_MODEL?.trim()||'gemini-3.8-flash',claudeKey:e.ANTHROPIC_API_KEY?.trim()||undefined,claudeModel:e.GEO_CLAUDE_MODEL?.trim()||'claude-opus-4-5-20251101',perplexityKey:e.PERPLEXITY_API_KEY?.trim()||undefined,perplexityModel:e.GEO_PERPLEXITY_MODEL?.trim()||'sonar',contentfulSpaceId:e.CONTENTFUL_SPACE_ID?.trim()||undefined,contentfulToken:e.CONTENTFUL_ACCESS_TOKEN?.trim()||undefined,useBrowser:e.GEO_USE_BROWSER==='true'};
 }
 function equal(a:string,b:string){return timingSafeEqual(createHash('sha256').update(a).digest(),createHash('sha256').update(b).digest())}
 function decodeBasic(req:IncomingMessage):{ok:boolean;creds:string}{const a=req.headers.authorization;if(!a||!a.startsWith('Basic '))return{ok:false,creds:''};try{return{ok:true,creds:Buffer.from(a.slice(6),'base64').toString('utf8')}}catch{return{ok:false,creds:''}}}
 function authenticated(req:IncomingMessage,s:Settings){if(s.mode==='local')return true;const{ok,creds}=decodeBasic(req);if(!ok)return false;return equal(creds,s.username+':'+s.password)}
 function isViewer(req:IncomingMessage,s:Settings):boolean{if(!s.viewerPassword||s.mode!=='basic')return false;const{ok,creds}=decodeBasic(req);if(!ok)return false;return equal(creds,s.username+':'+s.viewerPassword)}
+const bodies=new WeakMap<IncomingMessage,Promise<any>>();
+// A request stream can be read once. The client guard and the route handler both need the parsed body, so it is cached per request.
+function body(req:IncomingMessage):Promise<any>{let p=bodies.get(req);if(!p){p=readBody(req);bodies.set(req,p)}return p}
 function json(res:ServerResponse,status:number,data:unknown){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(data))}
-async function body(req:IncomingMessage){const chunks:Buffer[]=[];let bytes=0;for await(const chunk of req){const b=Buffer.from(chunk);bytes+=b.length;if(bytes>600000)throw new Error('Request too large');chunks.push(b)}return JSON.parse(Buffer.concat(chunks).toString('utf8'))}
+async function readBody(req:IncomingMessage){const chunks:Buffer[]=[];let bytes=0;for await(const chunk of req){const b=Buffer.from(chunk);bytes+=b.length;if(bytes>600000)throw new Error('Request too large');chunks.push(b)}return JSON.parse(Buffer.concat(chunks).toString('utf8'))}
 // cmp-3: extract external citation domains from HTML (sameAs, external links)
 function extractCitationSources(html:string,pageUrl:string):string[]{
   const base=new URL(pageUrl).hostname.replace(/^www\./,'');
@@ -78,6 +94,7 @@ function extractTopTopics(html:string):string[]{
 }
 
 export function createWorkbenchServer(s:Settings, supplied?:{providers:Map<string,AIProvider>;info:ProviderInfo[]}){const repo=new SqliteRepository(s.dataDir);const app=new Workbench(repo);
+ const auth=s.users?new AuthService(repo.db,s.users,new Mailer(s.mail,join(s.dataDir,'outbox'))):null;
  const providers=supplied?.providers||new Map<string,AIProvider>();
  if(!supplied&&s.openaiKey)providers.set('openai',new OpenAIProvider(s.openaiKey,s.openaiModel));
  if(!supplied&&s.geminiKey)providers.set('gemini',new GeminiProvider(s.geminiKey,s.geminiModel));
@@ -108,25 +125,38 @@ export function createWorkbenchServer(s:Settings, supplied?:{providers:Map<strin
  const runSchema=z.object({provider:z.string().min(1).max(60),prompt:z.string().trim().min(5).max(2000),requestId:z.string().uuid()}).strict();
  const server=createServer(async(req,res)=>{res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','same-origin');res.setHeader('X-Frame-Options','DENY');
  if(s.mode==='local'){let h='';try{h=new URL('http://'+(req.headers.host||'')).hostname}catch{}if(!['127.0.0.1','localhost','[::1]'].includes(h))return json(res,403,{error:'Host denied'})}
- const viewerOnly=!authenticated(req,s)&&isViewer(req,s);
- if(!authenticated(req,s)&&!viewerOnly){res.setHeader('WWW-Authenticate','Basic realm="AI Search Intelligence", charset="UTF-8"');return json(res,401,{error:'Sign in required'})}
+ let path:string;try{path=new URL(req.url||'/', 'http://app.internal').pathname}catch{return json(res,400,{error:'Invalid URL'})}
+ // Liveness probe for the container healthcheck. It reveals nothing, so it is served before authentication.
+ if(path==='/healthz'&&(req.method==='GET'||req.method==='HEAD'))return json(res,200,{status:'ok'});
+ // users mode: a signed-in session cookie. The page bundle itself is public so the sign-in screen can load.
+ const principal=auth?auth.principalFromToken(readCookie(req,SESSION_COOKIE)):null;
+ const viewerOnly=auth?!!principal?.readOnly:(!authenticated(req,s)&&isViewer(req,s));
+ if(!auth&&!authenticated(req,s)&&!viewerOnly){res.setHeader('WWW-Authenticate','Basic realm="AI Search Intelligence", charset="UTF-8"');return json(res,401,{error:'Sign in required'})}
  // Identity comes only from configured authentication. Client identity headers are ignored.
  const owner=s.username;
- let path:string;try{path=new URL(req.url||'/', 'http://app.internal').pathname}catch{return json(res,400,{error:'Invalid URL'})}
  try {
  if(path.startsWith('/api/')){
  if(!['GET','POST','DELETE','PATCH'].includes(req.method||''))return json(res,405,{error:'Method not allowed'});
  if(['POST','DELETE','PATCH'].includes(req.method||'')&&!s.origins.includes(req.headers.origin||''))return json(res,403,{error:'Origin denied'});
+ if(auth){
+  const ctx:RouteCtx={req,res,path,method:req.method||'GET',principal,auth,repo,owner,secure:s.users!.publicUrl.startsWith('https://'),json,body};
+  if(await handlePublicRoutes(ctx))return;
+  if(!principal){res.setHeader('Cache-Control','no-store');return json(res,401,{error:'Sign in required'})}
+  if(path.startsWith('/api/v1/admin/')){if(!auth.isAdmin(principal))return json(res,403,{error:'Administrator access required'});if(principal.readOnly)return json(res,403,{error:'Read-only mode'});if(await handleAdminRoutes(ctx))return}
+  // The audit log spans every client, so only administrators may read it.
+  if(path==='/api/v1/audit-log'&&!auth.isAdmin(principal))return json(res,403,{error:'Administrator access required'});
+  if(!viewerOnly||req.method==='GET'){const denied=await clientGuard(ctx);if(denied)return json(res,denied.status,{error:denied.error})}
+ }
  if(viewerOnly&&['POST','DELETE','PATCH'].includes(req.method||''))return json(res,403,{error:'Read-only mode'});
- if(path==='/api/v1/session')return req.method==='GET'?json(res,200,{readOnly:viewerOnly,username:s.username}):json(res,405,{error:'Method not allowed'});
+ if(path==='/api/v1/session')return req.method==='GET'?json(res,200,{mode:s.mode,authenticated:true,readOnly:viewerOnly,username:s.username}):json(res,405,{error:'Method not allowed'});
  if(path==='/api/v1/providers')return req.method==='GET'?json(res,200,info):json(res,405,{error:'Method not allowed'});
  const identityMatch=path.match(/^\/api\/v1\/clients\/([^/]+)\/identity$/);
  if(identityMatch){if(req.method!=='POST')return json(res,405,{error:'Method not allowed'});const input=identitySchema.parse(await body(req));return json(res,200,await identities.update(owner,decodeURIComponent(identityMatch[1]),input));}
  const runMatch=path.match(/^\/api\/v1\/clients\/([^/]+)\/observation-runs$/);
  if(runMatch){if(req.method!=='POST')return json(res,405,{error:'Method not allowed'});const input=runSchema.parse(await body(req));return json(res,200,await runner.run(owner,decodeURIComponent(runMatch[1]),input.provider,input.prompt,input.requestId));}
  if(path==='/api/v1/clients'){
- if(req.method==='GET')return json(res,200,await repo.listClients(owner));
- const data=clientSchema.parse(await body(req));const c={...data,domain:new URL(data.domain).origin,id:crypto.randomUUID(),created:new Date().toISOString()};await repo.saveClient(owner,c);repo.logEvent({id:crypto.randomUUID(),owner,action:'client.create',entityType:'client',entityId:c.id,clientId:c.id,detail:{name:c.name,domain:c.domain},created:c.created});return json(res,200,c)}
+ if(req.method==='GET'){const all=await repo.listClients(owner);const scope=auth&&principal?auth.scopeClientIds(principal):null;return json(res,200,scope?all.filter(x=>scope.has(x.id)):all)}
+ const data=clientSchema.parse(await body(req));const c={...data,domain:new URL(data.domain).origin,id:crypto.randomUUID(),created:new Date().toISOString()};await repo.saveClient(owner,c);if(auth&&principal&&!auth.isAdmin(principal))auth.store.grantCreator(principal.id,c.id);repo.logEvent({id:crypto.randomUUID(),owner,action:'client.create',entityType:'client',entityId:c.id,clientId:c.id,detail:{name:c.name,domain:c.domain},created:c.created});return json(res,200,c)}
  const recordMatch=path.match(/^\/api\/v1\/clients\/([^/]+)\/(audits|observations)\/([^/]+)$/);
  if(recordMatch){const[,cId,kind,rId]=[...recordMatch].map(decodeURIComponent);if(req.method!=='DELETE')return json(res,405,{error:'Method not allowed'});const ok=await repo.deleteRecord(owner,cId,kind as 'audit'|'observation',rId);return json(res,ok?200:404,ok?{deleted:rId}:{error:'Record not found'});}
  // sec-8: full client data export

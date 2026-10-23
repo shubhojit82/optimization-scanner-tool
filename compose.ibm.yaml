@@ -5,7 +5,6 @@ services:
     build: .
     env_file: .env
     environment:
-      GEO_AUTH_MODE: basic
       GEO_BIND: 0.0.0.0
       GEO_DATA_DIR: /app/data
       PORT: 8080

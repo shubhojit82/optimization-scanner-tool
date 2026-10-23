@@ -246,7 +246,7 @@ function makePhases(): Phase[] { return [
   {
     id:'p0', number:'Phase 0', title:'Platform Foundation', duration:'1–2 weeks',
     goal:'Establish production-oriented codebase, database schema, auth and background jobs.',
-    items:['✅ Modular contracts and repo structure','✅ SQLite + D1 versioned migrations (v5 — audit log)','✅ Authentication (local / basic / viewer)','✅ Background scheduler','✅ Vite + Node dual-stack dev environment','✅ Structured audit log (logEvent / listAuditLog)','⬜ Structured server logging and CI pipeline'],
+    items:['✅ Modular contracts and repo structure','✅ SQLite + D1 versioned migrations (v5 — audit log)','✅ Authentication (local / basic / viewer / users with sign-in page, access requests, per-client access)','✅ Background scheduler','✅ Vite + Node dual-stack dev environment','✅ Structured audit log (logEvent / listAuditLog)','⬜ Structured server logging and CI pipeline'],
     exit:'Sign-in, client registration and background jobs run locally and in a cloud environment.',
     release:'✅ Complete',
   },

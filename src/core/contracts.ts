@@ -259,7 +259,7 @@ export type Alert = {
 export type AuditLogEntry = {
     id: string;
     owner: string;
-    action: 'client.create' | 'client.delete' | 'audit.save' | 'finding.update' | 'recommendation.update' | 'probe.run' | 'scan.save';
+    action: 'client.create' | 'client.delete' | 'audit.save' | 'finding.update' | 'recommendation.update' | 'probe.run' | 'scan.save' | 'user.create' | 'user.update' | 'access.approve' | 'access.reject';
     entityType: string;
     entityId: string;
     clientId?: string;
@@ -276,3 +276,39 @@ export interface FindingStore {
     listRecommendations(owner: string, clientId: string): Recommendation[];
     updateRecommendation(owner: string, id: string, patch: Partial<Pick<Recommendation, 'status' | 'reviewNote' | 'owner' | 'effort' | 'impact'>>): Recommendation | null;
 }
+
+export type UserRole = 'admin' | 'member' | 'viewer';
+export type SessionInfo = {
+    mode: 'local' | 'basic' | 'users';
+    authenticated: boolean;
+    readOnly: boolean;
+    username: string;
+    user?: {id: string; email: string; name: string; role: UserRole; superAdmin: boolean};
+};
+export type AppUser = {
+    id: string;
+    email: string;
+    name: string;
+    role: UserRole;
+    status: 'active' | 'disabled';
+    created: string;
+    lastLogin?: string;
+    passwordSet: boolean;
+    clientIds: string[];
+};
+export type AccessRequestStatus = 'pending' | 'approved' | 'rejected';
+export type AccessRequest = {
+    id: string;
+    name: string;
+    email: string;
+    company: string;
+    role: string;
+    reason: string;
+    status: AccessRequestStatus;
+    created: string;
+    decidedAt?: string;
+    decidedBy?: string;
+    note?: string;
+};
+export type MailMode = 'off' | 'local' | 'smtp';
+export type InviteResult = {user: AppUser; inviteUrl: string; emailSent: boolean; mail: 'sent' | 'captured' | 'off' | 'failed'};
