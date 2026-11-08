@@ -1,13 +1,15 @@
 name: CI
 on:
   pull_request:
+  push:
+    branches: [main]
   workflow_call:
 permissions:
   contents: read
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -17,7 +19,22 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
-      - name: Check deploy scripts
+      - name: Check deploy scripts and compose file
         run: |
           for f in deploy/*.sh; do bash -n "$f"; done
+          PROD_HOST=example.test docker compose -f deploy/compose.yaml config -q
+      - name: Build image and smoke test it
+        run: |
           docker build -t geo-workbench:ci .
+          docker run -d --name smoke -p 8080:8080 \
+            -e GEO_AUTH_MODE=users \
+            -e GEO_SUPERADMIN_EMAIL=ci@example.com \
+            -e GEO_SUPERADMIN_PASSWORD=ci-only-password-0123456789 \
+            -e GEO_ALLOWED_ORIGINS=http://localhost:8080 \
+            geo-workbench:ci
+          for i in $(seq 1 20); do
+            if curl -fsS http://localhost:8080/healthz | grep -q '"ok"'; then echo "image is healthy"; exit 0; fi
+            sleep 2
+          done
+          docker logs smoke
+          exit 1

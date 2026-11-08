@@ -1,8 +1,0 @@
-{$STAGING_HOST} {
-  header X-Robots-Tag "noindex, nofollow"
-  reverse_proxy geo-staging:8080
-}
-
-{$PROD_HOST} {
-  reverse_proxy geo-prod:8080
-}

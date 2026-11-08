@@ -1,94 +1,62 @@
 #!/usr/bin/env bash
-# One-time VM setup (Ubuntu 22.04/24.04, e.g. Oracle Cloud Always Free). Run as the normal sudo user:
-#   GEO_REPO_URL=git@github.com:YOU/REPO.git bash bootstrap.sh
-# Re-run it after each prompt; every step is skipped if already done.
-# Optional: PROD_HOST=geo.example.com STAGING_HOST=staging.example.com (default: free sslip.io names)
-# Optional: GEO_ADMIN_EMAIL=you@company.com
+# One-time setup of a small x86 or ARM Ubuntu VM (tested target: Oracle Always Free E2.1.Micro, 1 GB RAM).
+# Run as the normal sudo user (ubuntu). Safe to re-run; finished steps are skipped.
+#   GEO_ADMIN_EMAIL=you@company.com bash bootstrap.sh
+# Optional: PROD_HOST=geo.example.com   (default: free <ip-with-dashes>.sslip.io)
 set -euo pipefail
 
-REPO="${GEO_REPO_URL:?set GEO_REPO_URL, e.g. git@github.com:YOU/REPO.git}"
 ADMIN_EMAIL="${GEO_ADMIN_EMAIL:-admin@example.com}"
 ME="$(id -un)"
 
-echo "==> Base tools (minimal Ubuntu images lack some of these)"
+echo "==> Base tools"
 sudo apt-get update -qq
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl git openssl openssh-client ca-certificates cron iptables >/dev/null
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl openssl ca-certificates cron iptables iptables-persistent >/dev/null
+
+echo "==> Swap (1 GB RAM needs it for Docker pulls and app spikes)"
+if ! swapon --show | grep -q /swapfile; then
+  if [ ! -f /swapfile ]; then
+    sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile >/dev/null
+  fi
+  sudo swapon /swapfile
+  grep -q '/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab >/dev/null
+fi
 
 echo "==> Docker"
-if ! command -v docker >/dev/null; then
-  curl -fsSL https://get.docker.com | sudo sh
-fi
+command -v docker >/dev/null || curl -fsSL https://get.docker.com | sudo sh
 sudo usermod -aG docker "$ME"
-D="sudo docker"
 
 echo "==> Firewall (Oracle Ubuntu images block 80/443 by default)"
 for p in 80 443; do
   sudo iptables -C INPUT -p tcp --dport "$p" -m state --state NEW -j ACCEPT 2>/dev/null \
     || sudo iptables -I INPUT 6 -p tcp --dport "$p" -m state --state NEW -j ACCEPT
 done
-sudo apt-get install -y -qq iptables-persistent >/dev/null 2>&1 || true
 sudo netfilter-persistent save >/dev/null 2>&1 || true
 
-echo "==> Swap (protects small VMs during the image build)"
-if [ ! -f /swapfile ] && [ "$(free -m | awk '/Mem:/{print $2}')" -lt 3000 ]; then
-  sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile >/dev/null && sudo swapon /swapfile
-  grep -q '/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab >/dev/null
-fi
-
 echo "==> Folders"
-sudo mkdir -p /opt/geo/{staging,prod}/data /opt/geo/caddy /opt/geo/backups
+sudo mkdir -p /opt/geo/data /opt/geo/caddy /opt/geo/backups
 sudo chown -R "$ME":"$ME" /opt/geo
-sudo chown 1000:1000 /opt/geo/staging/data /opt/geo/prod/data   # container user "node"
-$D network inspect geo-edge >/dev/null 2>&1 || $D network create geo-edge >/dev/null
+sudo chown 1000:1000 /opt/geo/data   # the container runs as user "node" (uid 1000)
 
-echo "==> Read-only deploy key for GitHub"
-KEY="$HOME/.ssh/geo_deploy"
-mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
-if [ ! -f "$KEY" ]; then
-  ssh-keygen -t ed25519 -N '' -C "geo-vm-deploy" -f "$KEY" >/dev/null
-  grep -q 'Host github.com' "$HOME/.ssh/config" 2>/dev/null || cat >> "$HOME/.ssh/config" <<EOF
-Host github.com
-  IdentityFile $KEY
-  IdentitiesOnly yes
-  StrictHostKeyChecking accept-new
-EOF
-  chmod 600 "$HOME/.ssh/config"
-fi
-if ! ssh -o BatchMode=yes -T git@github.com 2>&1 | grep -qi 'successfully authenticated\|does not provide shell'; then
-  echo
-  echo "Add this public key in GitHub: repo > Settings > Deploy keys > Add deploy key"
-  echo "(title: geo-vm, leave 'Allow write access' UNCHECKED), then re-run this script:"
-  echo
-  cat "$KEY.pub"
-  exit 0
-fi
-
-echo "==> Clone repo for each environment"
-for e in staging prod; do
-  [ -d "/opt/geo/$e/app/.git" ] || git clone "$REPO" "/opt/geo/$e/app"
-done
-
-echo "==> Hostnames"
-IP="$(curl -fsS https://api.ipify.org)"; DASH="${IP//./-}"
-STAGING_HOST="${STAGING_HOST:-staging.$DASH.sslip.io}"
-PROD_HOST="${PROD_HOST:-app.$DASH.sslip.io}"
-cat > /opt/geo/edge.env <<EOF
-STAGING_HOST=$STAGING_HOST
-PROD_HOST=$PROD_HOST
+echo "==> Hostname"
+IP="$(curl -fsS https://api.ipify.org)"
+PROD_HOST="${PROD_HOST:-app.${IP//./-}.sslip.io}"
+echo "PROD_HOST=$PROD_HOST" > /opt/geo/host.env
+cat > /opt/geo/Caddyfile <<'EOF'
+{$PROD_HOST} {
+  reverse_proxy app:8080
+}
 EOF
 
-echo "==> .env files (only created if missing)"
-make_env() { # env host
-  local f="/opt/geo/$1/.env"; [ -f "$f" ] && return 0
-  local pw; pw="$(openssl rand -base64 24 | tr -d '/+=' | cut -c1-24)"
-  umask 077
-  cat > "$f" <<EOF
+echo "==> .env (only created if missing)"
+if [ ! -f /opt/geo/.env ]; then
+  PW="$(openssl rand -base64 24 | tr -d '/+=' | cut -c1-24)"
+  ( umask 077; cat > /opt/geo/.env <<EOF
 GEO_AUTH_MODE=users
 GEO_SUPERADMIN_EMAIL=$ADMIN_EMAIL
-GEO_SUPERADMIN_PASSWORD=$pw
+GEO_SUPERADMIN_PASSWORD=$PW
 GEO_DATA_OWNER=admin
-GEO_ALLOWED_ORIGINS=https://$2
-GEO_PUBLIC_URL=https://$2
+GEO_ALLOWED_ORIGINS=https://$PROD_HOST
+GEO_PUBLIC_URL=https://$PROD_HOST
 GEO_TRUST_PROXY=true
 NODE_ENV=production
 GEO_MAIL_MODE=off
@@ -97,32 +65,44 @@ GEO_MAIL_MODE=off
 # ANTHROPIC_API_KEY=
 # PERPLEXITY_API_KEY=
 EOF
-  echo "  created $f   (Super Admin: $ADMIN_EMAIL / $pw)"
-}
-make_env staging "$STAGING_HOST"
-make_env prod "$PROD_HOST"
+  )
+  echo "  Super Admin: $ADMIN_EMAIL"
+  echo "  Password:    $PW      (also stored in /opt/geo/.env)"
+fi
 
-echo "==> Start the HTTPS front door"
-( cd /opt/geo/prod/app && $D compose -p geo-edge --env-file /opt/geo/edge.env -f deploy/edge/compose.yaml up -d )
-
-echo "==> Nightly prod backup (03:15)"
-CRON="15 3 * * * bash /opt/geo/prod/app/deploy/backup.sh prod >> /opt/geo/backups/backup.log 2>&1"
-( crontab -l 2>/dev/null | grep -v 'deploy/backup.sh' ; echo "$CRON" ) | crontab -
+echo "==> Nightly backup (03:15)"
+cat > /opt/geo/backup.sh <<'EOF'
+#!/usr/bin/env bash
+# Consistent copy of the SQLite database while the app runs; keeps 14 days.
+set -euo pipefail
+OUT=/opt/geo/backups; name="geo-$(date -u +%Y%m%dT%H%M%SZ).sqlite"
+cid="$(docker ps -q --filter label=com.docker.compose.project=geo --filter label=com.docker.compose.service=app | head -n1)"
+[ -n "$cid" ] || { echo "app is not running" >&2; exit 1; }
+docker exec "$cid" node -e "const {DatabaseSync}=require('node:sqlite');const d=new DatabaseSync('/app/data/geo.sqlite');d.exec(\"VACUUM INTO '/app/data/$name'\");d.close();"
+docker exec "$cid" gzip -9 "/app/data/$name"
+docker cp "$cid:/app/data/$name.gz" "$OUT/$name.gz"
+docker exec "$cid" rm -f "/app/data/$name.gz"
+find "$OUT" -name 'geo-*.sqlite.gz' -mtime +14 -delete
+echo "ok $OUT/$name.gz"
+EOF
+chmod +x /opt/geo/backup.sh
+( crontab -l 2>/dev/null | grep -v '/opt/geo/backup.sh'; echo "15 3 * * * /opt/geo/backup.sh >> /opt/geo/backups/backup.log 2>&1" ) | crontab -
+sudo systemctl enable --now cron >/dev/null 2>&1 || true
 
 echo "==> CI login key (the private key is shown once, then deleted)"
 if ! grep -q 'geo-ci' "$HOME/.ssh/authorized_keys" 2>/dev/null; then
   T="$(mktemp -d)"; ssh-keygen -t ed25519 -N '' -C geo-ci -f "$T/ci" >/dev/null
   cat "$T/ci.pub" >> "$HOME/.ssh/authorized_keys"; chmod 600 "$HOME/.ssh/authorized_keys"
-  echo "Copy this into the GitHub secret VM_SSH_KEY:"; echo; cat "$T/ci"; echo
+  echo "Copy EVERYTHING below into the GitHub secret VM_SSH_KEY:"; echo; cat "$T/ci"; echo
   shred -u "$T/ci" 2>/dev/null || rm -f "$T/ci"; rm -rf "$T"
 fi
 
 cat <<EOF
 
-Done. Next:
-  VM_HOST (secret)   = $IP
-  VM_USER (secret)   = $ME
-  STAGING_URL (var)  = https://$STAGING_HOST
-  PROD_URL (var)     = https://$PROD_HOST
-Push to main to deploy staging; push a tag like v0.1.0 to deploy production.
+Done. In GitHub (Settings > Secrets and variables > Actions) add:
+  secret   VM_HOST     = $IP
+  secret   VM_USER     = $ME
+  secret   VM_SSH_KEY  = (the private key printed above)
+  variable PROD_URL    = https://$PROD_HOST
+Then push a tag such as v0.1.0 to deploy.
 EOF

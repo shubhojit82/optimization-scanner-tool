@@ -1,0 +1,38 @@
+name: geo
+# Production stack for a small free VM (1 GB RAM). The image is built in GitHub Actions and loaded
+# onto the VM by deploy.sh, so nothing is built here.
+services:
+  app:
+    image: geo-workbench:${GEO_TAG:-none}
+    env_file: /opt/geo/.env
+    environment:
+      GEO_BIND: 0.0.0.0
+      GEO_DATA_DIR: /app/data
+      PORT: 8080
+      NODE_OPTIONS: --max-old-space-size=384
+    expose:
+      - "8080"
+    volumes:
+      - /opt/geo/data:/app/data
+    restart: unless-stopped
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+  caddy:
+    image: caddy:2
+    environment:
+      PROD_HOST: ${PROD_HOST:?set in /opt/geo/host.env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /opt/geo/Caddyfile:/etc/caddy/Caddyfile:ro
+      - /opt/geo/caddy:/data
+    depends_on:
+      app:
+        condition: service_healthy
+    restart: unless-stopped

@@ -1,56 +1,48 @@
 #!/usr/bin/env bash
-# Deploy one commit to one environment on the VM. Called by GitHub Actions:
-#   scp deploy/deploy.sh VM:/tmp/geo-deploy.sh && ssh VM "bash /tmp/geo-deploy.sh <staging|prod> <git-sha>"
-# Copied to /tmp first so that checking out a new commit cannot change the script while it runs.
-# Safe to re-run. On a failed health check it restarts the previous version.
+# Runs ON the VM; called by GitHub Actions in two steps:
+#   scp deploy/compose.yaml VM:/tmp/geo-compose.yaml ; scp deploy/deploy.sh VM:/tmp/geo-deploy.sh
+#   docker save geo-workbench:<tag> | gzip | ssh VM "bash /tmp/geo-deploy.sh <tag>"
+# The gzipped image arrives on stdin, so the 1 GB VM never builds anything.
+# On an unhealthy start it brings the previous version back.
 set -euo pipefail
 
-ENVNAME="${1:?usage: deploy.sh <staging|prod> <git-sha>}"
-REF="${2:?usage: deploy.sh <staging|prod> <git-sha>}"
-case "$ENVNAME" in staging|prod) ;; *) echo "env must be staging or prod" >&2; exit 2;; esac
+TAG="${1:?usage: deploy.sh <image-tag>   (image tarball on stdin)}"
+ROOT=/opt/geo
+[ -f "$ROOT/.env" ] || { echo "missing $ROOT/.env (run bootstrap.sh first)" >&2; exit 1; }
 
-ROOT="/opt/geo/$ENVNAME"
-cd "$ROOT/app"
-git fetch --tags --prune origin
-git checkout --force --detach "$REF"
+echo "==> loading image geo-workbench:$TAG"
+gunzip | docker load
 
-export GEO_ENV="$ENVNAME"
-export GEO_TAG="$(git rev-parse --short=12 HEAD)"
-export GEO_ENV_FILE="$ROOT/.env"
-export GEO_DATA_PATH="$ROOT/data"
 PREV="$(cat "$ROOT/current-tag" 2>/dev/null || true)"
-dc() { docker compose -p "geo-$ENVNAME" -f deploy/compose.app.yaml "$@" </dev/null; }
+install -m 644 /tmp/geo-compose.yaml "$ROOT/compose.yaml"
+dc() { GEO_TAG="$1" docker compose --env-file "$ROOT/host.env" -p geo -f "$ROOT/compose.yaml" "${@:2}" </dev/null; }
 
-[ -f "$GEO_ENV_FILE" ] || { echo "missing $GEO_ENV_FILE (run bootstrap.sh)" >&2; exit 1; }
+# Safety copy of the data before changing production.
+if [ -f "$ROOT/data/geo.sqlite" ] && [ -x "$ROOT/backup.sh" ]; then "$ROOT/backup.sh" || echo "WARNING: pre-deploy backup failed" >&2; fi
 
-# Take a safety copy of the data before changing production.
-if [ "$ENVNAME" = prod ] && [ -f "$GEO_DATA_PATH/geo.sqlite" ]; then
-  bash deploy/backup.sh prod || echo "WARNING: pre-deploy backup failed" >&2
-fi
+echo "==> starting $TAG (previous: ${PREV:-none})"
+dc "$TAG" up -d --remove-orphans
 
-echo "==> building and starting $ENVNAME at $GEO_TAG (previous: ${PREV:-none})"
-dc up -d --build
-
-cid="$(dc ps -q app)"
-for _ in $(seq 1 30); do
+cid="$(docker ps -q --filter label=com.docker.compose.project=geo --filter label=com.docker.compose.service=app | head -n1)"
+status=none
+for _ in $(seq 1 36); do
   status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$cid" 2>/dev/null || echo gone)"
-  [ "$status" = healthy ] && break
-  [ "$status" = unhealthy ] && break
+  case "$status" in healthy|unhealthy) break;; esac
   sleep 5
 done
 
 if [ "$status" != healthy ]; then
-  echo "!! $ENVNAME did not become healthy (status: $status)" >&2
-  dc logs --tail 60 app >&2 || true
-  if [ -n "$PREV" ] && docker image inspect "geo-workbench:$ENVNAME-$PREV" >/dev/null 2>&1; then
+  echo "!! $TAG did not become healthy (status: $status)" >&2
+  docker logs --tail 60 "$cid" >&2 || true
+  if [ -n "$PREV" ] && docker image inspect "geo-workbench:$PREV" >/dev/null 2>&1; then
     echo "==> rolling back to $PREV" >&2
-    GEO_TAG="$PREV" dc up -d --no-build
+    dc "$PREV" up -d
   fi
   exit 1
 fi
 
-echo "$GEO_TAG" > "$ROOT/current-tag"
-# Keep the images of the last two deploys (for rollback), drop the rest.
+echo "$TAG" > "$ROOT/current-tag"
+# Keep the images of the last two deploys for rollback; remove the rest.
+docker images geo-workbench --format '{{.Tag}}' | grep -v -x -e "$TAG" -e "${PREV:-none}" | xargs -r -I{} docker rmi geo-workbench:{} >/dev/null 2>&1 || true
 docker image prune -f >/dev/null
-docker images "geo-workbench" --format '{{.Repository}}:{{.Tag}}' | grep ":$ENVNAME-" | tail -n +3 | xargs -r docker rmi >/dev/null 2>&1 || true
-echo "==> $ENVNAME is healthy at $GEO_TAG"
+echo "==> healthy at $TAG"
