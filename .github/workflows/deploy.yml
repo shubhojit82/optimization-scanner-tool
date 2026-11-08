@@ -44,6 +44,7 @@ jobs:
         env:
           URL: ${{ vars.PROD_URL }}
         run: |
+          URL="$(printf '%s' "$URL" | sed -E 's#[./[:space:]]+$##')"   # tolerate a stray trailing dot or slash in the variable
           for i in $(seq 1 12); do
             if curl -fsS "$URL/healthz" | grep -q '"ok"'; then echo "healthy: $URL"; exit 0; fi
             sleep 5
