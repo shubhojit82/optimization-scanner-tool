@@ -86,7 +86,9 @@ find "$OUT" -name 'geo-*.sqlite.gz' -mtime +14 -delete
 echo "ok $OUT/$name.gz"
 EOF
 chmod +x /opt/geo/backup.sh
-( crontab -l 2>/dev/null | grep -v '/opt/geo/backup.sh'; echo "15 3 * * * /opt/geo/backup.sh >> /opt/geo/backups/backup.log 2>&1" ) | crontab -
+{ crontab -l 2>/dev/null || true; } | { grep -v '/opt/geo/backup.sh' || true; } > /tmp/geo-cron
+echo "15 3 * * * /opt/geo/backup.sh >> /opt/geo/backups/backup.log 2>&1" >> /tmp/geo-cron
+crontab /tmp/geo-cron && rm -f /tmp/geo-cron
 sudo systemctl enable --now cron >/dev/null 2>&1 || true
 
 echo "==> CI login key (the private key is shown once, then deleted)"
