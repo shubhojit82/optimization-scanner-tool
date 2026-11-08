@@ -22,6 +22,8 @@ jobs:
       - name: Check deploy scripts and compose file
         run: |
           for f in deploy/*.sh; do bash -n "$f"; done
+          # compose checks that the env_file exists; on the VM it is /opt/geo/.env, here use an empty stand-in
+          sudo mkdir -p /opt/geo && sudo touch /opt/geo/.env
           PROD_HOST=example.test docker compose -f deploy/compose.yaml config -q
       - name: Build image and smoke test it
         run: |
