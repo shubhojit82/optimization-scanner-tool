@@ -10,6 +10,10 @@ REPO="${GEO_REPO_URL:?set GEO_REPO_URL, e.g. git@github.com:YOU/REPO.git}"
 ADMIN_EMAIL="${GEO_ADMIN_EMAIL:-admin@example.com}"
 ME="$(id -un)"
 
+echo "==> Base tools (minimal Ubuntu images lack some of these)"
+sudo apt-get update -qq
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl git openssl openssh-client ca-certificates cron iptables >/dev/null
+
 echo "==> Docker"
 if ! command -v docker >/dev/null; then
   curl -fsSL https://get.docker.com | sudo sh
