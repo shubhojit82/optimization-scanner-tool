@@ -1,0 +1,21 @@
+# Shared HTTPS front door for staging and prod (automatic Let's Encrypt certificates).
+# Run with: docker compose -p geo-edge --env-file /opt/geo/edge.env -f deploy/edge/compose.yaml up -d
+services:
+  caddy:
+    image: caddy:2
+    environment:
+      STAGING_HOST: ${STAGING_HOST:?set in /opt/geo/edge.env}
+      PROD_HOST: ${PROD_HOST:?set in /opt/geo/edge.env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - /opt/geo/caddy:/data
+    networks:
+      - edge
+    restart: unless-stopped
+networks:
+  edge:
+    external: true
+    name: geo-edge

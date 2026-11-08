@@ -1,0 +1,59 @@
+name: Deploy
+# main  -> verify -> staging (automatic)
+# tag v* -> verify -> production (uses the "production" environment; add a required reviewer there if your plan allows it)
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Environment to deploy the selected ref to
+        type: choice
+        options: [staging, prod]
+        default: staging
+permissions:
+  contents: read
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    uses: ./.github/workflows/ci.yml
+
+  staging:
+    needs: verify
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || inputs.target == 'staging')
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: ${{ vars.STAGING_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy to staging
+        uses: ./.github/actions/deploy
+        with:
+          env-name: staging
+          url: ${{ vars.STAGING_URL }}
+          host: ${{ secrets.VM_HOST }}
+          user: ${{ secrets.VM_USER }}
+          ssh-key: ${{ secrets.VM_SSH_KEY }}
+
+  production:
+    needs: verify
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.target == 'prod')
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ vars.PROD_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy to production
+        uses: ./.github/actions/deploy
+        with:
+          env-name: prod
+          url: ${{ vars.PROD_URL }}
+          host: ${{ secrets.VM_HOST }}
+          user: ${{ secrets.VM_USER }}
+          ssh-key: ${{ secrets.VM_SSH_KEY }}

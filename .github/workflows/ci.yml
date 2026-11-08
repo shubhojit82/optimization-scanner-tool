@@ -1,13 +1,13 @@
-name: Verify GEO Workbench
+name: CI
 on:
-  push:
-    branches: [main]
   pull_request:
+  workflow_call:
 permissions:
   contents: read
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -17,3 +17,7 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      - name: Check deploy scripts
+        run: |
+          for f in deploy/*.sh; do bash -n "$f"; done
+          docker build -t geo-workbench:ci .

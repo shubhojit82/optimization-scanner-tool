@@ -1,0 +1,33 @@
+# One app instance. Used for both environments; deploy.sh sets the variables:
+#   GEO_ENV (staging|prod)  GEO_TAG (git short sha)  GEO_ENV_FILE  GEO_DATA_PATH
+# Run with: docker compose -p geo-$GEO_ENV -f deploy/compose.app.yaml up -d --build
+services:
+  app:
+    build:
+      context: ..
+    image: geo-workbench:${GEO_ENV}-${GEO_TAG}
+    env_file: ${GEO_ENV_FILE}
+    environment:
+      GEO_BIND: 0.0.0.0
+      GEO_DATA_DIR: /app/data
+      PORT: 8080
+    expose:
+      - "8080"
+    volumes:
+      - ${GEO_DATA_PATH}:/app/data
+    networks:
+      default:
+      edge:
+        aliases:
+          - geo-${GEO_ENV}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+networks:
+  edge:
+    external: true
+    name: geo-edge
